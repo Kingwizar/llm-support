@@ -1,0 +1,8 @@
+datasets
+kaggle
+pandas
+pymongo
+python-dotenv
+tqdm
+rapidfuzz
+langdetect
