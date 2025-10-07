@@ -24,7 +24,25 @@ import androidx.compose.ui.unit.dp
 import com.example.npone_llm.data.remote.dto.MessageDto
 import com.example.npone_llm.viewModel.ChatViewModel
 import kotlinx.coroutines.launch
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import com.example.npone_llm.data.remote.dto.ChatResponseDto
+import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.runtime.*
+
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,7 +66,8 @@ fun ChatApp(vm: ChatViewModel) {
                 },
                 onAdd = { vm.createConversation(it) },
                 onDelete = { vm.deleteConversation(it) },
-                onRename = { id, title -> vm.renameConversation(id, title) }
+                onRename = { id, title -> vm.renameConversation(id, title) },
+                onCloseDrawer = { scope.launch { drawerState.close() } }
             )
 
         }
@@ -91,52 +110,80 @@ fun ChatApp(vm: ChatViewModel) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(vm: ChatViewModel, modifier: Modifier = Modifier) {
     val conv = vm.currentConversation.value
     val isLoading = vm.isLoading.value
-
     var input by remember { mutableStateOf("") }
 
-    Column(
-        modifier.fillMaxSize().padding(8.dp)
+    val refreshState = rememberPullToRefreshState()
+    val scope = rememberCoroutineScope()
+    var isRefreshing by remember { mutableStateOf(false) }
+
+    // Quand le rafraîchissement est terminé, on arrête l'animation
+    LaunchedEffect(isLoading) {
+        if (!isLoading) {
+            isRefreshing = false
+        }
+    }
+
+    PullToRefreshBox(
+        state = refreshState,
+        isRefreshing = isRefreshing,
+        onRefresh = {
+            scope.launch {
+                isRefreshing = true
+                vm.loadConversations()
+            }
+        },
+        modifier = Modifier.fillMaxSize()
     ) {
-        // Liste des messages
-        LazyColumn(
-            modifier = Modifier.weight(1f).fillMaxWidth()
+        Column(
+            modifier
+                .fillMaxSize()
+                .padding(8.dp)
         ) {
-            conv?.messages?.let { msgs ->
-                items(msgs) { msg ->
-                    ChatBubble(msg)
+            // --- Liste des messages ---
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
+                conv?.messages?.let { msgs ->
+                    items(msgs) { msg ->
+                        ChatBubble(msg)
+                    }
                 }
             }
-        }
 
-        // Champ + bouton
-        Row(
-            Modifier.fillMaxWidth().padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            OutlinedTextField(
-                value = input,
-                onValueChange = { input = it },
-                modifier = Modifier.weight(1f),
-                label = { Text("Écris ta question...") }
-            )
-            Spacer(Modifier.width(8.dp))
-            Button(
-                onClick = {
-                    vm.sendQuestion(input)
-                    input = ""
-                },
-                enabled = !isLoading && input.isNotBlank()
+            // --- Champ et bouton d'envoi ---
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(if (isLoading) "..." else "Envoyer")
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = { input = it },
+                    modifier = Modifier.weight(1f),
+                    label = { Text("Écris ta question...") }
+                )
+                Spacer(Modifier.width(8.dp))
+                Button(
+                    onClick = {
+                        vm.sendQuestion(input)
+                        input = ""
+                    },
+                    enabled = !isLoading && input.isNotBlank()
+                ) {
+                    Text(if (isLoading) "..." else "Envoyer")
+                }
             }
         }
     }
 }
-
 @Composable
 fun ChatBubble(msg: MessageDto) {
     val isUser = msg.isUser
@@ -163,7 +210,8 @@ fun DrawerContent(
     onSelect: (String) -> Unit,
     onAdd: (String) -> Unit,
     onDelete: (String) -> Unit,
-    onRename: (String, String) -> Unit
+    onRename: (String, String) -> Unit,
+    onCloseDrawer: () -> Unit // 👈 ajout pour revenir à la conversation
 ) {
     val conversations = vm.conversations
     var newTitle by remember { mutableStateOf("") }
@@ -172,107 +220,124 @@ fun DrawerContent(
     var renamingConvId by remember { mutableStateOf<String?>(null) }
     var renameText by remember { mutableStateOf("") }
 
-    // 🌫️ Effet de fond semi-flouté et assombri
+    // 🌫️ Fond sombre semi-transparent (lisibilité améliorée)
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.White.copy(alpha = 0.8f)) // fond sombre transparent
-            .blur(10.dp) // flou “verre dépoli”
-    )
-
-
-    Column(
-        Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState())
+            .background(Color.Black.copy(alpha = 0.4f))
     ) {
-        Spacer(Modifier.height(64.dp))
-        Text(
-            "Conversations",
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-
-        Spacer(Modifier.height(12.dp))
-
-        // 🔹 Liste des conversations
-        conversations.forEach { conv ->
-            Row(
+        Surface(
+            modifier = Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(0.85f) // largeur du menu
+                .background(Color.White)
+                .shadow(8.dp),
+            color = Color.White.copy(alpha = 0.95f)
+        ) {
+            Column(
                 Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 6.dp)
-                    .background(
-                        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
-                        shape = MaterialTheme.shapes.small
-                    )
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .fillMaxSize()
+                    .padding(16.dp)
             ) {
-                if (renamingConvId == conv.id) {
-                    OutlinedTextField(
-                        value = renameText,
-                        onValueChange = { renameText = it },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("Nouveau titre") }
-                    )
-                    IconButton(onClick = {
-                        if (renameText.isNotBlank()) {
-                            onRename(conv.id, renameText)
-                            renamingConvId = null
-                            renameText = ""
+                // 🔹 En-tête fixe
+                Text(
+                    "Conversations",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                // 🔹 Liste déroulante indépendante
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                ) {
+                    LazyColumn {
+                        items(conversations) { conv ->
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 6.dp)
+                                    .background(
+                                        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+                                        shape = MaterialTheme.shapes.small
+                                    )
+                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (renamingConvId == conv.id) {
+                                    OutlinedTextField(
+                                        value = renameText,
+                                        onValueChange = { renameText = it },
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f),
+                                        placeholder = { Text("Nouveau titre") }
+                                    )
+                                    IconButton(onClick = {
+                                        if (renameText.isNotBlank()) {
+                                            onRename(conv.id, renameText)
+                                            renamingConvId = null
+                                            renameText = ""
+                                        }
+                                    }) {
+                                        Icon(Icons.Default.Check, contentDescription = "Valider")
+                                    }
+                                } else {
+                                    Text(
+                                        text = conv.title ?: "(Sans titre)",
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable {
+                                                onSelect(conv.id)
+                                                onCloseDrawer() // 👈 ferme le drawer
+                                            },
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                    Row {
+                                        IconButton(onClick = {
+                                            renamingConvId = conv.id
+                                            renameText = conv.title ?: ""
+                                        }) {
+                                            Icon(Icons.Default.Edit, contentDescription = "Renommer")
+                                        }
+                                        IconButton(onClick = { showDeleteDialog = conv.id }) {
+                                            Icon(Icons.Default.Delete, contentDescription = "Supprimer")
+                                        }
+                                    }
+                                }
+                            }
                         }
-                    }) {
-                        Icon(Icons.Default.Check, contentDescription = "Valider")
                     }
-                } else {
-                    Text(
-                        text = conv.title ?: "(Sans titre)",
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable { onSelect(conv.id) }, // ✅ clic à nouveau actif
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                    Row {
-                        IconButton(onClick = {
-                            renamingConvId = conv.id
-                            renameText = conv.title ?: ""
-                        }) {
-                            Icon(Icons.Default.Edit, contentDescription = "Renommer")
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                // 🔹 Zone d’ajout (fixe en bas)
+                OutlinedTextField(
+                    value = newTitle,
+                    onValueChange = { newTitle = it },
+                    label = { Text("Nouvelle conversation") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Button(
+                    onClick = {
+                        if (newTitle.isNotBlank()) {
+                            onAdd(newTitle)
+                            newTitle = ""
                         }
-                        IconButton(onClick = { showDeleteDialog = conv.id }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Supprimer")
-                        }
-                    }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                ) {
+                    Text("Ajouter")
                 }
             }
-        }
-
-        Spacer(Modifier.height(20.dp))
-
-        // 🔹 Ajout d'une nouvelle conversation
-        OutlinedTextField(
-            value = newTitle,
-            onValueChange = { newTitle = it },
-            label = { Text("Nouvelle conversation") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Button(
-            onClick = {
-                if (newTitle.isNotBlank()) {
-                    onAdd(newTitle)
-                    newTitle = ""
-                }
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 12.dp)
-        ) {
-            Text("Ajouter")
         }
     }
 

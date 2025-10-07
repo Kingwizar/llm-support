@@ -10,7 +10,8 @@ import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 
 object ApiClient {
     // ⚠️ Pour l'émulateur Android
-    private const val BASE_URL = "http://10.100.99.107:8000/"
+    private const val BASE_URL = "http://192.168.93.110:8000/"
+    //private const val BASE_URL = "http://10.100.99.107:8000/"
 
     private val logging = HttpLoggingInterceptor().apply {
         level = HttpLoggingInterceptor.Level.BODY

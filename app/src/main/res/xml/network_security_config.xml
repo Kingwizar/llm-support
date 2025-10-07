@@ -1,12 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Autorise l'accès clair à l'émulateur -->
     <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">192.168.93.110</domain>
         <domain includeSubdomains="true">10.0.2.2</domain>
-    </domain-config>
-
-    <!-- Autorise l'accès clair au PC depuis un téléphone physique -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">10.100.99.107</domain>
+        <domain includeSubdomains="true">localhost</domain>
     </domain-config>
 </network-security-config>
