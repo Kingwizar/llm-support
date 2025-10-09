@@ -18,8 +18,8 @@ class ChatRepository {
     suspend fun createConversation(title: String) =
         ApiClient.chatApi.createConversation(ConversationRequestDto(title))
 
-    suspend fun addMessage(convId: String, text: String, isUser: Boolean) =
-        ApiClient.chatApi.addMessage(convId, MessageRequestDto(text, isUser))
+    suspend fun addMessage(convId: String, content: String, role: String) =
+        ApiClient.chatApi.addMessage(convId, MessageRequestDto(content, role))
 
     suspend fun deleteConversation(id: String) =
         ApiClient.chatApi.deleteConversation(id)

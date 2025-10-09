@@ -5,9 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
@@ -17,7 +15,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -26,22 +23,6 @@ import com.example.npone_llm.viewModel.ChatViewModel
 import kotlinx.coroutines.launch
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
-import com.example.npone_llm.data.remote.dto.ChatResponseDto
-import androidx.compose.material3.*
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
-import androidx.compose.runtime.*
-import kotlinx.coroutines.launch
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.*
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
-import androidx.compose.runtime.*
-
-import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -186,18 +167,18 @@ fun ChatScreen(vm: ChatViewModel, modifier: Modifier = Modifier) {
 }
 @Composable
 fun ChatBubble(msg: MessageDto) {
-    val isUser = msg.isUser
+    val role = msg.role == "bot"
     Box(
         modifier = Modifier.fillMaxWidth().padding(4.dp),
-        contentAlignment = if (isUser) Alignment.CenterEnd else Alignment.CenterStart
+        contentAlignment = if (!role) Alignment.CenterEnd else Alignment.CenterStart
     ) {
         Surface(
-            color = if (isUser) MaterialTheme.colorScheme.primary else Color(0xFFEFEFEF),
+            color = if (role) MaterialTheme.colorScheme.primary else Color(0xFFEFEFEF),
             shape = RoundedCornerShape(16.dp)
         ) {
             Text(
-                msg.text,
-                color = if (isUser) Color.White else Color.Black,
+                msg.content,
+                color = if (role) Color.White else Color.Black,
                 modifier = Modifier.padding(12.dp)
             )
         }

@@ -7,6 +7,6 @@ data class ConversationDto(
 )
 
 data class MessageDto(
-    val text: String,
-    val isUser: Boolean
+    val content: String,
+    val role: String
 )

@@ -38,8 +38,19 @@ class ChatViewModel : ViewModel() {
                 val convs = repo.getConversations()
                 conversations.clear()
                 conversations.addAll(convs)
-                if (convs.isNotEmpty() && currentConversation.value == null) {
-                    currentConversation.value = convs.first()
+
+                // 🔥 Actualiser currentConversation si elle existe encore dans la nouvelle liste
+                currentConversation.value?.let { current ->
+                    val updated = convs.find { it.id == current.id }
+                    if (updated != null) {
+                        currentConversation.value = updated
+                    } else if (convs.isNotEmpty()) {
+                        currentConversation.value = convs.first()
+                    } else {
+                        currentConversation.value = null
+                    }
+                } ?: run {
+                    if (convs.isNotEmpty()) currentConversation.value = convs.first()
                 }
             } catch (e: Exception) {
                 error.value = e.message ?: "Erreur lors du chargement"
@@ -48,6 +59,7 @@ class ChatViewModel : ViewModel() {
             }
         }
     }
+
 
     // --- Créer une nouvelle conversation
     fun createConversation(title: String) {
@@ -83,7 +95,7 @@ class ChatViewModel : ViewModel() {
                         newConv.id
                     }
 
-                val updatedConv = repo.addMessage(convId, question, true)
+                val updatedConv = repo.addMessage(convId, question, "user")
                 updateConversationInList(updatedConv)
 
                 // 2) Envoyer la question au backend /chat
@@ -104,7 +116,7 @@ class ChatViewModel : ViewModel() {
                 }
 
                 // Ajouter ce message complet à la conversation
-                val updatedWithLLM = repo.addMessage(convId, botMessage, false)
+                val updatedWithLLM = repo.addMessage(convId, botMessage, "bot")
                 updateConversationInList(updatedWithLLM)
 
                 error.value = null
