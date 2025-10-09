@@ -1,7 +1,7 @@
 # Python
 venv/
 backend/venv/
-frontend/venv/
+
 __pycache__/
 *.pyc
 *.pyo
@@ -13,6 +13,8 @@ node_modules/
 dist/
 frontend-angular/.angular/
 frontend-angular/.env
+frontend/venv/
+frontend-angular/node_modules/
 
 # Environnements et secrets
 .env
