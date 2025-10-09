@@ -1,0 +1,27 @@
+<div class="history">
+  <!-- Titre fixé en haut -->
+  <h3>Conversations</h3>
+
+  <!-- Liste des conversations défilante -->
+  <div class="conversation-list">
+    <div
+      *ngFor="let convo of conversations"
+      class="conversation-item"
+      [class.active]="selectedConversation?._id === convo._id"
+      (click)="selectConversation(convo)"
+    >
+      <span>{{ convo.title || '(Sans titre)' }}</span>
+
+      <div class="actions">
+        <button (click)="renameConversation(convo, $event)">✏️</button>
+        <button (click)="deleteConversation(convo._id, $event)">🗑️</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Barre d'ajout fixée en bas -->
+  <div class="add-convo">
+    <input [(ngModel)]="newConversationName" placeholder="Nom de la nouvelle conversation" />
+    <button (click)="createConversation()">➕ Ajouter</button>
+  </div>
+</div>

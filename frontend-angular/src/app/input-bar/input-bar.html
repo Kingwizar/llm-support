@@ -1,0 +1,4 @@
+<div class="input-bar">
+  <input [(ngModel)]="prompt" type="text" placeholder="Écris ton message..." (keyup.enter)="sendMessage()" />
+  <button (click)="sendMessage()">Envoyer</button>
+</div>

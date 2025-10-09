@@ -1,0 +1,34 @@
+.main-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh; /* toute la hauteur écran */
+}
+
+.content {
+  display: flex;
+  flex: 1;
+  overflow: hidden; /* empêche le scroll global */
+}
+
+/* panneau de gauche (history) */
+.history {
+  width: 400px;        /* largeur fixe */
+  background: #f4f4f4;
+  border-right: 1px solid #ddd;
+  overflow-y: auto;    /* scroll uniquement dans l’historique si trop long */
+}
+
+/* panneau de droite (chat) */
+.chat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* pas de scroll global */
+}
+
+/* scroll uniquement dans la zone de messages */
+.chat .messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 15px;
+}

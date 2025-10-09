@@ -1,0 +1,15 @@
+/* You can add global styles to this file, and also import other style files */
+/* Supprimer marges par défaut */
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: Arial, sans-serif;
+}
+
+/* Racine Angular */
+app-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}

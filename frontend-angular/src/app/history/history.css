@@ -1,0 +1,103 @@
+.history {
+  padding: 0 15px;
+  background: #fafafa;
+  border-left: 1px solid #ddd;
+  height: 100vh; /* prend tout l'écran */
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* --- Titre fixé en haut --- */
+.history h3 {
+  text-align: center;
+  font-size: 1.3em;
+  color: #2c3e50;
+  font-weight: bold;
+  margin: 0;
+  padding: 12px;
+  background: #f8f8f8;
+  border-bottom: 1px solid #ddd;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+/* --- Liste défilante entre le header et le footer --- */
+.conversation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 0;
+}
+
+/* --- Élément d'une conversation --- */
+.conversation-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: white;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.conversation-item:hover {
+  background: #f0f7ff;
+  border-color: #007bff;
+}
+
+.conversation-item.active {
+  background: #007bff;
+  color: white;
+  font-weight: bold;
+}
+
+.conversation-item button {
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px;
+}
+
+/* --- Barre d’ajout fixée en bas --- */
+.add-convo {
+  position: sticky;
+  bottom: 0;
+  background: #f8f8f8;
+  border-top: 1px solid #ddd;
+  display: flex;
+  gap: 6px;
+  padding: 10px 0;
+  z-index: 2;
+}
+
+/* --- Champ texte --- */
+.add-convo input {
+  flex: 1;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  outline: none;
+}
+
+/* --- Bouton Ajouter --- */
+.add-convo button {
+  padding: 8px 12px;
+  background: #28a745;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.add-convo button:hover {
+  background: #218838;
+}
