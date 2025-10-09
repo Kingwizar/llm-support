@@ -1,0 +1,15 @@
+[SYSTEM]
+{system}
+
+[USER QUESTION]
+{question}
+
+[RETRIEVED CONTEXT]
+{sources_block}
+
+[RESPONSE REQUIREMENTS]
+- Start with Summary
+- Then Procedure
+- Add Citations
+- Add Assumptions
+- Ask clarifying questions if needed
