@@ -6,6 +6,24 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 import logging, time
 from llm import rag_prepare
+import os
+from dotenv import load_dotenv
+
+# Charger le fichier .env
+load_dotenv()
+
+# --- Récupération des variables d'environnement ---
+APP_ENV = os.getenv("APP_ENV")
+APP_PORT = int(os.getenv("APP_PORT"))
+APP_HOST = os.getenv("APP_HOST")
+
+MONGO_URI = os.getenv("MONGO_URI")
+MONGO_DB = os.getenv("MONGO_DB")
+
+LLM_ENDPOINT = os.getenv("LLM_ENDPOINT")
+LLM_API_KEY = os.getenv("LLM_API_KEY")
+
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "").split(",")
 
 app = FastAPI()
 logger = logging.getLogger("uvicorn.error")
@@ -13,16 +31,17 @@ logger = logging.getLogger("uvicorn.error")
 # --- CORS ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS if CORS_ORIGINS != [""] else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+
 # --- Connexion MongoDB ---
-MONGO_URI = "mongodb://localhost:27017"
 client = AsyncIOMotorClient(MONGO_URI)
-db = client["chatdb"]
+db = client[MONGO_DB]
+
 conversations = db["conversations"]
 
 # ======================================================

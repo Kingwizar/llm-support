@@ -1,23 +1,20 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { HttpClient } from '@angular/common/http';
+import { environment } from '../../../environments/environment';
 
 @Injectable({ providedIn: 'root' })
 export class HistoryService {
-  private apiUrl = 'http://127.0.0.1:3000/conversations';
-
-  // Active conversation (objet complet, pas juste l'id)
+  private apiUrl = environment.historyApiUrl;
   private activeConversation = new BehaviorSubject<any | null>(null);
   activeConversation$ = this.activeConversation.asObservable();
 
   constructor(private http: HttpClient) {}
 
   getConversations(id?: string): Observable<any[]> {
-  if (id) {
-    return this.http.get<any[]>(`${this.apiUrl}/${id}`);
+    const url = id ? `${this.apiUrl}/${id}` : this.apiUrl;
+    return this.http.get<any[]>(url);
   }
-  return this.http.get<any[]>(this.apiUrl);
-}
 
   createConversation(title: string) {
     return this.http.post<any>(this.apiUrl, { title });
@@ -35,21 +32,19 @@ export class HistoryService {
     return this.http.get<any[]>(`${this.apiUrl}/${id}/messages`);
   }
 
-  // 🔥 Nouvelle méthode
   setActiveConversation(convo: any) {
     this.activeConversation.next(convo);
   }
+
   deleteConversation(id: string) {
-  return this.http.delete(`${this.apiUrl}/${id}`);
-}
-sendToLLM(question: string) {
-  return this.http.post<any>('http://127.0.0.1:8000/chat', { question });
-}
+    return this.http.delete(`${this.apiUrl}/${id}`);
+  }
 
-uploadFile(conversationId: string, formData: FormData) {
-  return this.http.post<any>(`${this.apiUrl}/${conversationId}/upload`, formData);
-}
+  sendToLLM(question: string) {
+    return this.http.post<any>(environment.chatApiUrl, { question });
+  }
 
-
-
+  uploadFile(conversationId: string, formData: FormData) {
+    return this.http.post<any>(`${this.apiUrl}/${conversationId}/upload`, formData);
+  }
 }

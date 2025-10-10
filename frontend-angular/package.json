@@ -2,9 +2,9 @@
   "name": "frontend-angular",
   "version": "0.0.0",
   "scripts": {
-    "ng": "ng",
-    "start": "ng serve",
-    "build": "ng build",
+    "set-env": "ts-node scripts/set-env.ts",
+  "start": "npm run set-env && ng serve",
+  "build": "npm run set-env && ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test"
   },

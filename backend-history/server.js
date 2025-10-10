@@ -1,21 +1,39 @@
-// server.js
+// ================== IMPORTS ==================
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
+import dotenv from "dotenv";
 
 // ================== CONFIG ==================
-const app = express();
-const PORT = 3000;
+dotenv.config(); // ← charge le .env depuis la racine
 
-// Middleware
-app.use(cors());
+const app = express();
+const PORT = process.env.APP_PORT || 3000;
+const MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/chatdb";
+
+// ================== MIDDLEWARES ==================
 app.use(express.json());
 
+// --- CORS sécurisé (Angular) ---
+app.use(
+  cors({
+    origin: ["http://localhost:4200", "http://127.0.0.1:4200"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    credentials: true,
+  })
+);
+app.options(/.*/, cors()); // ✅ Express 5 compatible (remplace "*")
+
+// --- Logger global ---
+app.use((req, res, next) => {
+  console.log(`📥 ${req.method} ${req.url}`);
+  next();
+});
+
 // ================== MONGODB ==================
-const MONGO_URI = "mongodb://127.0.0.1:27017/chatdb"; // ⚠️ change le nom si tu veux
 mongoose
   .connect(MONGO_URI)
-  .then(() => console.log("✅ Connected to MongoDB"))
+  .then(() => console.log(`✅ Connected to MongoDB at ${MONGO_URI}`))
   .catch((err) => console.error("❌ MongoDB error:", err));
 
 // ================== MODELS ==================
@@ -33,54 +51,91 @@ const Conversation = mongoose.model("Conversation", ConversationSchema);
 
 // ================== ROUTES ==================
 
-// Récupérer toutes les conversations
+// 🔹 1. Récupérer toutes les conversations
 app.get("/conversations", async (req, res) => {
-  const convos = await Conversation.find();
-  res.json(convos);
-});
-app.delete("/conversations/:id", async (req, res) => {
   try {
-    const { id } = req.params;
-    await Conversation.findByIdAndDelete(id);
-    res.json({ success: true });
+    const convos = await Conversation.find();
+    console.log(`🧠 Conversations trouvées : ${convos.length}`);
+    res.json(convos);
   } catch (err) {
+    console.error("❌ Erreur get /conversations :", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-
-// Créer une conversation
+// 🔹 2. Créer une nouvelle conversation
 app.post("/conversations", async (req, res) => {
-  const convo = new Conversation({ title: req.body.title, messages: [] });
-  await convo.save();
-  res.json(convo);
+  try {
+    const convo = new Conversation({ title: req.body.title, messages: [] });
+    await convo.save();
+    console.log(`✨ Nouvelle conversation : ${convo.title}`);
+    res.json(convo);
+  } catch (err) {
+    console.error("❌ Erreur création conversation :", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// Renommer une conversation
+// 🔹 3. Renommer une conversation
 app.put("/conversations/:id", async (req, res) => {
-  const convo = await Conversation.findByIdAndUpdate(
-    req.params.id,
-    { title: req.body.title },
-    { new: true }
-  );
-  res.json(convo);
+  try {
+    const convo = await Conversation.findByIdAndUpdate(
+      req.params.id,
+      { title: req.body.title },
+      { new: true }
+    );
+    console.log(`✏️ Conversation renommée : ${convo.title}`);
+    res.json(convo);
+  } catch (err) {
+    console.error("❌ Erreur renommage :", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// Ajouter un message
+// 🔹 4. Supprimer une conversation
+app.delete("/conversations/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    await Conversation.findByIdAndDelete(id);
+    console.log(`🗑️ Conversation supprimée : ${id}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("❌ Erreur suppression :", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 🔹 5. Ajouter un message
 app.post("/conversations/:id/messages", async (req, res) => {
-  const convo = await Conversation.findById(req.params.id);
-  convo.messages.push({ role: req.body.role, content: req.body.content });
-  await convo.save();
-  res.json(convo);
+  try {
+    const convo = await Conversation.findById(req.params.id);
+    if (!convo) return res.status(404).json({ error: "Conversation introuvable" });
+
+    convo.messages.push({ role: req.body.role, content: req.body.content });
+    await convo.save();
+    console.log(`💬 Nouveau message ajouté à ${convo.title}`);
+    res.json(convo);
+  } catch (err) {
+    console.error("❌ Erreur ajout message :", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// Récupérer les messages d’une conversation
+// 🔹 6. Récupérer les messages d'une conversation
 app.get("/conversations/:id/messages", async (req, res) => {
-  const convo = await Conversation.findById(req.params.id);
-  res.json(convo ? convo.messages : []);
+  try {
+    const convo = await Conversation.findById(req.params.id);
+    if (!convo) return res.status(404).json({ error: "Conversation introuvable" });
+
+    console.log(`📨 Messages récupérés pour ${convo.title} (${convo.messages.length})`);
+    res.json(convo.messages);
+  } catch (err) {
+    console.error("❌ Erreur récupération messages :", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// ================== START ==================
+// ================== START SERVER ==================
 app.listen(PORT, () => {
   console.log(`🚀 Backend running at http://127.0.0.1:${PORT}`);
 });

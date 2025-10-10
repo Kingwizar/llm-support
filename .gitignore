@@ -1,26 +1,60 @@
-# Python
-venv/
-backend/venv/
-
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.db
-
-# Node / Angular
-node_modules/
-dist/
-frontend-angular/.angular/
-frontend-angular/.env
-frontend/venv/
-frontend-angular/node_modules/
-
-# Environnements et secrets
+# =========================
+# 🧠 ENVIRONNEMENTS & SECRETS
+# =========================
 .env
 *.env
 .env.*
+# Empêche d’uploader tous les fichiers contenant des secrets (.env.dev, .env.local, etc.)
+!frontend-angular/src/environments/environment*.ts  # On garde les fichiers Angular générés s'ils sont publics
 
-# Système
+# =========================
+# 🐍 PYTHON / FASTAPI
+# =========================
+venv/
+backend/venv/
+__pycache__/
+*.py[cod]
+*.db
+*.sqlite3
+*.pkl
+
+# =========================
+# 🟢 NODE / EXPRESS / ANGULAR
+# =========================
+node_modules/
+dist/
+frontend-angular/node_modules/
+frontend-angular/dist/
+backend-history/node_modules/
+backend-history/dist/
+frontend-angular/.angular/
+
+# fichiers temporaires et logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+pnpm-lock.yaml
+# (optionnel : si tu veux éviter de commiter tes lockfiles — sinon garde-les)
+
+# =========================
+# 🧱 BUILD & CACHE
+# =========================
+.cache/
+.tmp/
+coverage/
+*.log
+
+# =========================
+# 💻 IDE / ÉDITEURS
+# =========================
+.vscode/
+.idea/
+*.swp
+
+# =========================
+# 🧩 SYSTÈME
+# =========================
 .DS_Store
 Thumbs.db
+desktop.ini
