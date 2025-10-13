@@ -7,10 +7,12 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import com.example.npone_llm.BuildConfig
+
 
 object ApiClient {
     // ⚠️ Pour l'émulateur Android
-    private const val BASE_URL = "http://192.168.93.110:8000/"
+    private val BASE_URL = BuildConfig.API_BASE_URL
     //private const val BASE_URL = "http://10.100.99.107:8000/"
 
     private val logging = HttpLoggingInterceptor().apply {

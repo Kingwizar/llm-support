@@ -1,1 +1,38 @@
-/build
+# === Android / Gradle ===
+.gradle/
+build/
+**/build/
+local.properties
+.gradle/
+captures/
+output.json
+
+# === Android Studio ===
+.idea/
+*.iml
+.DS_Store
+
+# === Keystore / credentials ===
+*.jks
+*.keystore
+*.pem
+*.p12
+*.key
+
+# === Environnements ===
+.env
+*.env
+.env.*
+!example.env    # (si tu veux garder un modèle vide)
+
+# === Logs ===
+*.log
+
+# === Cache / Generated ===
+*/.cxx/
+*/.externalNativeBuild/
+app/release/
+app/debug/
+
+# === Misc ===
+Thumbs.db

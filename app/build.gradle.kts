@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -8,14 +10,34 @@ android {
     namespace = "com.example.npone_llm"
     compileSdk = 35
 
+    // 🔹 Active la génération de BuildConfig
+    buildFeatures {
+        buildConfig = true
+        compose = true
+    }
+
+    // 🔹 Charge ton fichier .env
+    val envFile = file(".env") // comme ton .env est dans app/
+    val envProps = Properties()
+    if (envFile.exists()) {
+        println("✅ Loading .env from ${envFile.absolutePath}")
+        envProps.load(envFile.inputStream())
+    } else {
+        println("⚠️ .env not found in ${projectDir}")
+    }
+
     defaultConfig {
         applicationId = "com.example.npone_llm"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // 🔹 Injecte les variables du .env dans BuildConfig
+        envProps.forEach { key, value ->
+            buildConfigField("String", key.toString(), "\"${value}\"")
+        }
     }
 
     buildTypes {
@@ -27,15 +49,14 @@ android {
             )
         }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+
     kotlinOptions {
         jvmTarget = "11"
-    }
-    buildFeatures {
-        compose = true
     }
 }
 
@@ -68,9 +89,9 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
+    // Moshi
     implementation("com.squareup.moshi:moshi:1.15.1")
-    // Moshi Kotlin adapter (permet d'utiliser KotlinJsonAdapterFactory)
     implementation("com.squareup.moshi:moshi-kotlin:1.15.1")
-    implementation("androidx.compose.material3:material3:1.3.0")
 
+    implementation("androidx.compose.material3:material3:1.3.0")
 }
