@@ -3,13 +3,27 @@ import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // ================== CONFIG ==================
-dotenv.config(); // ← charge le .env depuis la racine
+dotenv.config({ path: path.resolve(__dirname, "../.env") }); // ← charge le .env depuis la racine
 
 const app = express();
-const PORT = process.env.APP_PORT || 3000;
-const MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/chatdb";
+const PORT = process.env.APP_PORTT;
+const MONGO_URI = process.env.MONGO_URI + "/" + process.env.MONGO_DB;
+const CORS_ORIGINS = process.env.CORS_ORIGINS.split(",");
+
+const test = process.env.MONGO_URI;
+
+console.log("MONGO_URI:", test);
+if (!MONGO_URI) {
+  console.error("❌ ERREUR : MONGO_URI non défini dans .env");
+  process.exit(1);
+}
 
 // ================== MIDDLEWARES ==================
 app.use(express.json());
@@ -17,7 +31,7 @@ app.use(express.json());
 // --- CORS sécurisé (Angular) ---
 app.use(
   cors({
-    origin: ["http://localhost:4200", "http://127.0.0.1:4200"],
+    origin: [CORS_ORIGINS],
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     credentials: true,
   })
