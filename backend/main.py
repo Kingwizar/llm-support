@@ -5,13 +5,18 @@ from typing import List
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 from bson import ObjectId
 import logging, time
-from llm import rag_prepare
+from llm.rag_core import answer_with_rag_or_web, rag_prepare
+from llm.prompt_builder import build_prompt_from_extracted_file
 import os
 from dotenv import load_dotenv
 from fastapi.responses import StreamingResponse
 from io import BytesIO
 from datetime import datetime
 from ingest.file_ingest import extract_text_from_file
+from ingest.extractors.pdf_extractor import extract_pdf_text
+from ingest.web_search import simple_web_search
+import sys, os
+sys.path.append(os.path.dirname(__file__))
 
 # ======================================================
 # ----------------- CONFIGURATION ----------------------
@@ -22,6 +27,7 @@ load_dotenv()
 APP_ENV = os.getenv("APP_ENV")
 APP_PORT = int(os.getenv("APP_PORT"))
 APP_HOST = os.getenv("APP_HOST")
+print(APP_PORT)
 
 MONGO_URI = os.getenv("MONGO_URI")
 MONGO_DB = os.getenv("MONGO_DB")
@@ -153,7 +159,7 @@ async def chat(req: ChatRequest):
     """
     try:
         logger.info(f"💬 Requête RAG : {req.question}")
-        pack = rag_prepare(req.question)
+        pack = rag_prepare(req.question) #pack = answer_with_rag_or_web(req.question) 
 
         # 🧠 Simulation RAG
         fake_summary = f"Réponse simulée pour la question: '{req.question}'"
@@ -216,58 +222,81 @@ async def chat(req: ChatRequest):
 @app.post("/upload/{conv_id}")
 async def upload_files(conv_id: str, files: List[UploadFile] = File(...)):
     """
-    Reçoit des fichiers, les stocke dans MongoDB (GridFS),
-    et ajoute la référence dans la conversation.
+    Reçoit les fichiers, extrait le texte, construit un prompt RAG,
+    les stocke directement dans MongoDB GridFS et met à jour la conversation.
     """
     try:
         saved_files = []
+
         for file in files:
-            data = await file.read()
+            file_data = await file.read()
+            logger.info(f"📦 Fichier reçu : {file.filename} ({len(file_data)} octets)")
+
+            # 1️⃣ Enregistrement direct du fichier dans MongoDB (GridFS)
             file_id = await fs.upload_from_stream(
                 file.filename,
-                BytesIO(data),
+                BytesIO(file_data),
                 metadata={
                     "content_type": file.content_type,
-                    "size": len(data),
+                    "size": len(file_data),
                     "uploaded_at": datetime.utcnow().isoformat(),
-                },
+                    "conversation_id": conv_id
+                }
             )
 
-            await db["files"].insert_one({
-                "_id": file_id,
-                "filename": file.filename,
-                "content_type": file.content_type,
-                "size": len(data),
-                "uploaded_at": datetime.utcnow(),
-            })
+            # 2️⃣ Extraction du texte à partir du fichier
+            # Pour l’extraction, il faut d’abord sauvegarder temporairement le flux pour PyMuPDF / pytesseract
+            tmp_path = f"/tmp/{file.filename}"
+            with open(tmp_path, "wb") as tmp:
+                tmp.write(file_data)
+            extracted = extract_text_from_file(tmp_path)
+            os.remove(tmp_path)
 
-            saved_files.append({
-                "id": str(file_id),
-                "filename": file.filename,
-                "content_type": file.content_type,
-                "size": len(data),
-                "url": f"http://127.0.0.1:{APP_PORT}/file/{file_id}"
-            })
+            # 3️⃣ Construction du prompt spécifique fichier
+            file_prompt = build_prompt_from_extracted_file(extracted)
 
-            # 🔹 Ajoute le fichier comme message dans la conversation
-            await conversations.update_one(
+            # 4️⃣ Passage par le RAG
+            rag_data = rag_prepare(file_prompt)
+
+            # 5️⃣ Ajout du message utilisateur (fichier) dans la conversation
+            await db["conversations"].update_one(
                 {"_id": ObjectId(conv_id)},
                 {"$push": {"messages": {
                     "role": "user",
-                    "content": f"📎 {file.filename}",
-                    "file_id": str(file_id),
-                    "file_url": f"http://127.0.0.1:{APP_PORT}/file/{file_id}",
-                    "isUser": True
+                    "content": file_prompt,
+                    "file_name": file.filename,
+                    "rag_context": rag_data["sources_block"],
+                    "file_id": str(file_id)
                 }}}
             )
 
-            logger.info(f"📤 Fichier {file.filename} sauvegardé dans MongoDB GridFS.")
+            # 6️⃣ Enregistrement des métadonnées (plus légères)
+            await db["files"].insert_one({
+                "_id": file_id,
+                "filename": file.filename,
+                "type": extracted.get("type"),
+                "content_type": file.content_type,
+                "size": len(file_data),
+                "uploaded_at": datetime.utcnow(),
+                "conversation_id": conv_id
+            })
 
-        return {"message": "✅ Fichiers enregistrés avec succès", "files": saved_files}
+            saved_files.append({
+                "filename": file.filename,
+                "type": extracted.get("type"),
+                "id": str(file_id)
+            })
+
+        logger.info(f"✅ {len(saved_files)} fichier(s) stockés dans MongoDB et liés à la conversation.")
+        return {
+            "message": "Fichiers analysés et enregistrés dans MongoDB.",
+            "files": saved_files
+        }
 
     except Exception as e:
-        logger.error(f"❌ Erreur upload : {str(e)}", exc_info=True)
+        logger.error(f"❌ Erreur upload : {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erreur upload : {str(e)}")
+
 
 # ======================================================
 # ----------------- TÉLÉCHARGEMENT FICHIERS -------------
@@ -315,3 +344,18 @@ async def log_requests(request: Request, call_next):
     except Exception as e:
         logger.error(f"❌ [{idem}] Exception: {str(e)}", exc_info=True)
         raise
+
+
+# ======================================================
+# ----------------- websearch ----------------------
+# ======================================================
+
+@app.post("/websearch")
+async def web_search(req: dict):
+    query = req.get("query", "").strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="Query vide")
+
+    results = simple_web_search(query)
+    logger.info(f"🌐 Recherche web pour '{query}' : {len(results)} résultats")
+    return {"query": query, "results": results}

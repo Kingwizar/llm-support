@@ -28,7 +28,9 @@ frontend-angular/dist/
 backend-history/node_modules/
 backend-history/dist/
 frontend-angular/.angular/
+frontend-angular/environments/environment.ts
 
+frontend-angular/environments
 # fichiers temporaires et logs
 npm-debug.log*
 yarn-debug.log*

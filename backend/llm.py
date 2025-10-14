@@ -54,6 +54,16 @@ RUNTIME_TEMPLATE = """[SYSTEM]
 [RETRIEVED CONTEXT]
 {sources_block}
 
+[ADDITIONAL CONTEXT]
+If the user input comes from a document, PDF, or image, interpret the extracted text as descriptive content, not as a direct question. 
+If it’s an image, describe what it likely contains or conveys based on the text extracted via OCR.
+If it’s a report or document, summarize the main ideas and infer possible user intent.
+
+[EXTERNAL SOURCES HANDLING]
+If the retrieved context includes [WEB] items, summarize or quote them clearly as external web information.
+Prefer official documentation when available.
+
+
 [RESPONSE REQUIREMENTS]
 - Start with Summary
 - Then Procedure
@@ -235,3 +245,42 @@ def clean_llm_answer(model_raw_text: str) -> Dict[str, Any]:
     }
 
 
+def build_prompt_from_extracted_file(file_info: dict) -> str:
+    """
+    Construit un prompt spécifique pour un fichier extrait :
+    - file_info = {"type": "pdf"/"image"/"docx", "text": "..."}
+    """
+    file_type = file_info.get("type", "unknown")
+    extracted_text = (file_info.get("text") or "").strip()
+
+    if not extracted_text:
+        return f"[INFO] Aucun texte détecté dans le fichier ({file_type})."
+
+    prompt = f"""
+[FILE TYPE]
+{file_type.upper()}
+
+[EXTRACTED CONTENT]
+{extracted_text[:2000]}  # Limité à 2000 caractères pour éviter les prompts géants
+
+[INSTRUCTION]
+Analyse ou résume ce fichier. Si c'est une image, décris ce qu'elle semble représenter.
+Si c'est un rapport, extrais les points clés, les intentions ou le contexte métier.
+Relie ces informations aux documents du contexte RAG si pertinent.
+"""
+    return prompt.strip()
+
+
+
+def answer_with_rag_or_web(question: str) -> Dict[str, Any]:
+    """
+    Essaie d'abord le RAG ; si aucun hit utile, bascule sur le web.
+    """
+    pack = rag_prepare(question)
+    if not pack["citations"] or len(pack["citations"]) < 1:
+        from ingest.web_search import simple_web_search
+        results = simple_web_search(question)
+        sources_block = "\n".join(f"[WEB] {r['title']}: {r['snippet']}" for r in results)
+        pack["sources_block"] = sources_block
+        pack["citations"] = [{"doc": r["url"], "score": 0.5} for r in results]
+    return pack
