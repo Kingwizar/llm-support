@@ -9,7 +9,7 @@ from llm.rag_core import answer_with_rag_or_web, rag_prepare
 from llm.prompt_builder import build_prompt_from_extracted_file
 import os
 from dotenv import load_dotenv
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from io import BytesIO
 from datetime import datetime
 from ingest.file_ingest import extract_text_from_file
@@ -85,11 +85,16 @@ def conv_helper(conv) -> dict:
             {
                 "id": str(m.get("_id")) if "_id" in m else None,
                 "role": m.get("role") or ("user" if m.get("isUser") else "bot"),
-                "content": m.get("content") or m.get("text") or "",
+                "content": m.get("content") or "",
+                "file_url": m.get("file_url"),
+                "file_name": m.get("file_name"),
+                "file_id": m.get("file_id"),
             }
             for m in conv.get("messages", [])
         ],
     }
+
+
 
 # ======================================================
 # ----------------- MODELS ------------------------------
@@ -222,108 +227,116 @@ async def chat(req: ChatRequest):
 @app.post("/upload/{conv_id}")
 async def upload_files(conv_id: str, files: List[UploadFile] = File(...)):
     """
-    Reçoit les fichiers, extrait le texte, construit un prompt RAG,
-    les stocke directement dans MongoDB GridFS et met à jour la conversation.
+    Reçoit des fichiers, les stocke dans MongoDB (GridFS),
+    extrait leur contenu pour RAG (en interne),
+    et ajoute un message dans la conversation avec un lien de téléchargement.
     """
     try:
         saved_files = []
 
         for file in files:
-            file_data = await file.read()
-            logger.info(f"📦 Fichier reçu : {file.filename} ({len(file_data)} octets)")
+            data = await file.read()
+            logger.info(f"📦 Réception du fichier : {file.filename} ({len(data)} bytes)")
 
-            # 1️⃣ Enregistrement direct du fichier dans MongoDB (GridFS)
+            # 1️⃣ Enregistrer le fichier dans MongoDB GridFS
             file_id = await fs.upload_from_stream(
                 file.filename,
-                BytesIO(file_data),
+                BytesIO(data),
                 metadata={
                     "content_type": file.content_type,
-                    "size": len(file_data),
+                    "size": len(data),
                     "uploaded_at": datetime.utcnow().isoformat(),
-                    "conversation_id": conv_id
-                }
+                },
             )
 
-            # 2️⃣ Extraction du texte à partir du fichier
-            # Pour l’extraction, il faut d’abord sauvegarder temporairement le flux pour PyMuPDF / pytesseract
-            tmp_path = f"/tmp/{file.filename}"
-            with open(tmp_path, "wb") as tmp:
-                tmp.write(file_data)
-            extracted = extract_text_from_file(tmp_path)
-            os.remove(tmp_path)
-
-            # 3️⃣ Construction du prompt spécifique fichier
-            file_prompt = build_prompt_from_extracted_file(extracted)
-
-            # 4️⃣ Passage par le RAG
-            rag_data = rag_prepare(file_prompt)
-
-            # 5️⃣ Ajout du message utilisateur (fichier) dans la conversation
-            await db["conversations"].update_one(
-                {"_id": ObjectId(conv_id)},
-                {"$push": {"messages": {
-                    "role": "user",
-                    "content": file_prompt,
-                    "file_name": file.filename,
-                    "rag_context": rag_data["sources_block"],
-                    "file_id": str(file_id)
-                }}}
-            )
-
-            # 6️⃣ Enregistrement des métadonnées (plus légères)
+            # 2️⃣ Sauvegarder les métadonnées dans la collection "files"
             await db["files"].insert_one({
                 "_id": file_id,
                 "filename": file.filename,
-                "type": extracted.get("type"),
                 "content_type": file.content_type,
-                "size": len(file_data),
+                "size": len(data),
                 "uploaded_at": datetime.utcnow(),
-                "conversation_id": conv_id
+                "conversation_id": conv_id,
             })
+
+            # 3️⃣ Extraire le texte du fichier pour le système RAG
+            tmp_path = f"/tmp/{file.filename}"
+            with open(tmp_path, "wb") as f:
+                f.write(data)
+
+            try:
+                extracted = extract_text_from_file(tmp_path)
+                file_prompt = build_prompt_from_extracted_file(extracted)
+                rag_data = rag_prepare(file_prompt)
+                logger.info(f"📄 Texte extrait pour RAG ({file.filename})")
+            except Exception as e:
+                rag_data = {"sources_block": ""}
+                logger.warning(f"⚠️ Échec extraction RAG pour {file.filename}: {e}")
+            finally:
+                os.remove(tmp_path)
+
+            # 4️⃣ Ajouter le message utilisateur avec lien de téléchargement
+            file_url = f"http://127.0.0.1:{APP_PORT}/file/{file_id}"
+            await conversations.update_one(
+                {"_id": ObjectId(conv_id)},
+                {"$push": {"messages": {
+                    "role": "user",
+                    "content": f"📎 {file.filename}",
+                    "file_id": str(file_id),
+                    "file_url": file_url,
+                    "rag_context": rag_data["sources_block"],
+                    "isUser": True,
+                    "uploaded_at": datetime.utcnow()
+                }}}
+            )
+
+            logger.info(f"💾 Fichier {file.filename} sauvegardé et référencé dans la conversation.")
 
             saved_files.append({
+                "id": str(file_id),
                 "filename": file.filename,
-                "type": extracted.get("type"),
-                "id": str(file_id)
+                "content_type": file.content_type,
+                "size": len(data),
+                "url": file_url,
             })
 
-        logger.info(f"✅ {len(saved_files)} fichier(s) stockés dans MongoDB et liés à la conversation.")
-        return {
-            "message": "Fichiers analysés et enregistrés dans MongoDB.",
-            "files": saved_files
-        }
+        return {"message": "✅ Fichiers enregistrés avec succès", "files": saved_files}
 
     except Exception as e:
-        logger.error(f"❌ Erreur upload : {e}", exc_info=True)
+        logger.error(f"❌ Erreur upload : {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erreur upload : {str(e)}")
-
-
-# ======================================================
-# ----------------- TÉLÉCHARGEMENT FICHIERS -------------
-# ======================================================
-
+    
 @app.get("/file/{file_id}")
 async def get_file(file_id: str):
+    """
+    Télécharge un fichier stocké dans MongoDB GridFS.
+    """
     try:
         oid = ObjectId(file_id)
         meta = await db["files"].find_one({"_id": oid})
         if not meta:
             raise HTTPException(status_code=404, detail="Fichier introuvable")
 
+        # 🔹 Lecture du fichier depuis GridFS
         stream = BytesIO()
         await fs.download_to_stream(oid, stream)
         stream.seek(0)
 
-        logger.info(f"📤 Fichier téléchargé : {meta['filename']}")
+        logger.info(f"📤 Fichier téléchargé : {meta['filename']} ({meta['size']} bytes)")
+
         return StreamingResponse(
             stream,
             media_type=meta.get("content_type", "application/octet-stream"),
-            headers={"Content-Disposition": f"attachment; filename={meta['filename']}"}
+            headers={
+                "Content-Disposition": f"attachment; filename={meta['filename']}"
+            }
         )
 
     except Exception as e:
-        logger.error(f"❌ Erreur téléchargement : {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Erreur téléchargement : {str(e)}")
+        logger.error(f"❌ Erreur lors du téléchargement du fichier : {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erreur téléchargement : {str(e)}")  
+
+
 
 # ======================================================
 # ----------------- LOGGING GLOBAL ----------------------

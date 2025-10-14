@@ -11,6 +11,18 @@ interface UploadedFile {
   url: string;
 }
 
+interface Message {
+  _id?: string;
+  role: string;
+  content: string;
+  file_id?: string;
+  file_url?: string;
+  isUser?: boolean;
+  rag_context?: string;
+  uploaded_at?: string;
+  files?: UploadedFile[];
+}
+
 @Component({
   selector: 'app-chat-panel',
   standalone: true,
@@ -20,7 +32,7 @@ interface UploadedFile {
 })
 export class ChatPanelComponent implements OnInit {
   activeConversation: any = null;
-  messages: { role: string; content: string; files?: UploadedFile[] }[] = [];
+  messages: Message[] = [];
 
   constructor(private history: HistoryService, private chat: ChatService) {}
 
@@ -36,40 +48,37 @@ export class ChatPanelComponent implements OnInit {
   onSendMessage(event: { text: string; files: UploadedFile[] }) {
     const { text, files } = event;
 
-    // ➕ Ajout immédiat du message utilisateur
     this.messages.push({ role: 'user', content: text, files });
 
-    // Sauvegarde en BDD
     if (this.activeConversation?._id) {
       this.history.addMessage(this.activeConversation._id, 'user', text).subscribe();
     }
 
-    // Si texte → envoie au LLM
     if (text.trim()) {
-  this.history.sendToLLM(text, this.activeConversation._id).subscribe({
-    next: (res: any) => {
-      const botResponse =
-        (res.steps?.length ? res.steps.map((s: string) => s).join('\n') : '') +
-        (res.citations?.length
-          ? `\n📚 Sources: ${res.citations.map((c: any) => c.doc).join(', ')}`
-          : '');
-
-      // Ajoute le message dans la liste locale
-      this.messages.push({ role: 'bot', content: botResponse.trim() });
-
-      // Enregistre aussi le message dans la BDD
-      this.history.addMessage(this.activeConversation._id, 'bot', botResponse.trim()).subscribe();
-    },
-    error: (err) => console.error('❌ Erreur API:', err)
-  });
+      this.history.sendToLLM(text, this.activeConversation._id).subscribe({
+        next: (res: any) => {
+          const botResponse =
+            (res.steps?.length ? res.steps.map((s: string) => s).join('\n') : '') +
+            (res.citations?.length
+              ? `\n📚 Sources: ${res.citations.map((c: any) => c.doc).join(', ')}`
+              : '');
+          this.messages.push({ role: 'bot', content: botResponse.trim() });
+          this.history.addMessage(this.activeConversation._id, 'bot', botResponse.trim()).subscribe();
+        },
+        error: (err) => console.error('❌ Erreur API:', err)
+      });
     }
-
   }
 
-  getFileIcon(type?: string) {
-    if (!type) return 'assets/icons/file.png';
-    if (type.startsWith('image/')) return 'assets/icons/image.png';
-    if (type === 'application/pdf') return 'assets/icons/pdf.png';
+  getFileIcon(nameOrType: string): string {
+    const name = nameOrType.toLowerCase();
+    if (name.endsWith('.pdf')) return 'assets/icons/pdf.png';
+    if (name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'assets/icons/image.png';
+    if (name.endsWith('.doc') || name.endsWith('.docx')) return 'assets/icons/doc.png';
     return 'assets/icons/file.png';
+  }
+
+  cleanFilename(content: string): string {
+    return content.replace('📎', '').trim();
   }
 }
