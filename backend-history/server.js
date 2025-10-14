@@ -5,9 +5,21 @@ import cors from "cors";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
+import axios from "axios";
+import FormData from "form-data";
+import fs from "fs";
+import multer from "multer";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const uploadDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadDir),
+  filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
+});
+const upload = multer({ storage });
 
 // ================== CONFIG ==================
 dotenv.config({ path: path.resolve(__dirname, "../.env") }); // ← charge le .env depuis la racine
@@ -132,6 +144,29 @@ app.post("/conversations/:id/messages", async (req, res) => {
   } catch (err) {
     console.error("❌ Erreur ajout message :", err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/chat/upload", upload.array("files"), async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0)
+      return res.status(400).json({ error: "Aucun fichier reçu." });
+
+    // Envoi des fichiers à FastAPI (main.py)
+    const formData = new FormData();
+    req.files.forEach((file) =>
+      formData.append("files", fs.createReadStream(file.path))
+    );
+
+    const fastApiUrl = "http://127.0.0.1:8001/upload"; // 🔹 Adapter au port FastAPI
+    const response = await axios.post(fastApiUrl, formData, {
+      headers: formData.getHeaders(),
+    });
+
+    res.json(response.data);
+  } catch (err) {
+    console.error("❌ Erreur /api/chat/upload:", err.message);
+    res.status(500).json({ error: "Erreur durant l'upload." });
   }
 });
 

@@ -4,63 +4,63 @@
   flex-direction: column;
   background: #f8f9fa;
   padding: 15px;
-  overflow-y: auto;
   height: 100%;
 }
 
-.chat-panel h3 {
-  margin-bottom: 15px;
-  font-size: 18px;
-  color: #333;
-}
-
-/* conteneur des messages */
 .messages {
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-bottom: 15px;
+  overflow-y: auto;
 }
 
-/* style commun aux bulles */
-.messages div {
+.user { align-self: flex-end; }
+.bot { align-self: flex-start; }
+
+.bubble {
   max-width: 70%;
-  padding: 10px 15px;
+  background: white;
   border-radius: 15px;
-  line-height: 1.4;
-  font-size: 14px;
-  word-wrap: break-word;
-  white-space: pre-line; /* ✅ permet d’afficher les sauts de ligne du LLM */
+  padding: 10px 15px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
-/* message utilisateur */
-.messages .user {
-  align-self: flex-end;
-  background-color: #007bff;
-  color: white;
-  border-bottom-right-radius: 5px;
+.user .bubble { background-color: #007bff; color: white; }
+.bot .bubble { background-color: #e9ecef; color: #222; }
+
+.text { white-space: pre-line; margin-bottom: 8px; }
+
+.file-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 5px;
 }
 
-/* message bot */
-.messages .bot {
-  align-self: flex-start;
-  background-color: #e9ecef;
-  color: #222;
-  border-bottom-left-radius: 5px;
+.file-item {
+  display: flex;
+  align-items: center;
+  background: #f1f1f1;
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+.file-icon {
+  width: 20px;
+  height: 20px;
+  margin-right: 6px;
+}
+
+.preview-image {
+  max-width: 180px;
+  border-radius: 8px;
+  box-shadow: 0 0 3px rgba(0,0,0,0.2);
 }
 .input-bar {
   border-top: 1px solid #ddd;
   padding: 10px;
   background: #fff;
   position: sticky;
-  bottom: 0;   /* reste fixé en bas */
-}
-.messages .file-attachment {
-  background: #f1f1f1;
-  border-left: 4px solid #007bff;
-  padding: 5px 10px;
-  border-radius: 5px;
-  margin: 5px 0;
-  display: inline-block;
+  bottom: 8;   /* reste fixé en bas */
 }

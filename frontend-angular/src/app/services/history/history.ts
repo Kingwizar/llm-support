@@ -40,7 +40,7 @@ export class HistoryService {
     return this.http.delete(`${this.apiUrl}/${id}`);
   }
 
-  sendToLLM(question: string) {
+  sendToLLM(question: string, _id: any) {
     return this.http.post<any>(environment.chatApiUrl, { question });
   }
 

@@ -1,9 +1,7 @@
 # file_ingestion.py
 import os
 from typing import Dict, Any
-import fitz
-from PIL import Image
-import pytesseract
+
 
 def extract_text_from_file(file_path: str) -> Dict[str, Any]:
     """Détecte le type de fichier et en extrait le texte brut."""

@@ -3,13 +3,24 @@
 
   <div class="messages">
     <div *ngFor="let msg of messages" [ngClass]="msg.role">
-      <span *ngIf="msg.role === 'user'"> </span>
-      <span *ngIf="msg.role === 'bot'"> </span>
-      {{ msg.content }}
-    </div>
-    
-  </div>
-  
+      <div class="bubble">
+        <div class="text">{{ msg.content }}</div>
 
-  <app-input-bar class="input-bar" (send)="onSendMessage($event)"></app-input-bar>
+        <div *ngIf="msg.files?.length" class="file-list">
+          <div *ngFor="let file of msg.files" class="file-item">
+            <a [href]="file.url" target="_blank" download>
+              <img [src]="getFileIcon(file.content_type)" class="file-icon" />
+              <span>{{ file.filename }}</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<app-input-bar
+  class="input-bar"
+  [convId]="activeConversation?._id"
+  (send)="onSendMessage($event)">
+</app-input-bar>
 </div>

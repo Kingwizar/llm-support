@@ -1,8 +1,8 @@
-import { Component, EventEmitter, Output } from '@angular/core';
+import { Component, EventEmitter, Output, Input } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ChatService } from '../services/chat/chat';
 import { CommonModule } from '@angular/common';
 import { HttpClientModule } from '@angular/common/http';
+import { ChatService } from '../services/chat/chat';
 
 @Component({
   selector: 'app-input-bar',
@@ -12,38 +12,46 @@ import { HttpClientModule } from '@angular/common/http';
   styleUrls: ['./input-bar.css']
 })
 export class InputBar {
-  @Output() send = new EventEmitter<string>();
+  @Input() convId?: string;
+  @Output() send = new EventEmitter<{ text: string; files: any[] }>();
+
   prompt: string = '';
+  selectedFiles: File[] = [];
 
   constructor(private chatService: ChatService) {}
 
-  sendMessage() {
-  if (this.prompt.trim() !== '') {
-    // 🔹 Envoie seulement le message de l’utilisateur
-    this.send.emit(this.prompt);
-
-    // 🔹 Appelle l’API pour récupérer la réponse
-    this.chatService.sendQuestion(this.prompt).subscribe({
-      next: (res) => {
-        // Construit une réponse unique du bot
-        const botResponse =
-          (res.steps?.length ? res.steps.map((s: string) =>  s).join("\n") : "") +
-          (res.citations?.length ? `\n📚 Sources: ${res.citations.map((c: any) => c.doc).join(", ")}` : "");
-          
-
-        // ⚠️ Ne pas utiliser `this.send.emit` ici
-        // Tu envoies le botResponse directement au chat-panel via un EventEmitter distinct,
-        // OU tu laisses chat-panel gérer l'affichage après l'appel API
-        this.chatService.pushBotMessage(botResponse.trim());
-      },
-      error: (err) => {
-        this.chatService.pushBotMessage("⚠️ Erreur API : " + err.message);
-      }
-    });
-
-    this.prompt = '';
+  onFileSelect(event: Event) {
+    const input = event.target as HTMLInputElement;
+    if (!input.files) return;
+    this.selectedFiles.push(...Array.from(input.files));
+    input.value = '';
   }
-}
 
+  removeFile(index: number) {
+    this.selectedFiles.splice(index, 1);
+  }
 
+  sendMessage() {
+    if (!this.prompt.trim() && this.selectedFiles.length === 0) return;
+
+    // ✅ Si des fichiers sont sélectionnés
+    if (this.selectedFiles.length > 0 && this.convId) {
+      const formData = new FormData();
+      this.selectedFiles.forEach(file => formData.append('files', file));
+
+      this.chatService.uploadFiles(this.convId, formData).subscribe({
+        next: (res) => {
+          this.send.emit({ text: this.prompt, files: res.files });
+          this.prompt = '';
+          this.selectedFiles = [];
+        },
+        error: (err) =>
+          this.chatService.pushBotMessage('⚠️ Erreur upload : ' + err.message)
+      });
+    } else {
+      // Aucun fichier → juste texte
+      this.send.emit({ text: this.prompt, files: [] });
+      this.prompt = '';
+    }
+  }
 }

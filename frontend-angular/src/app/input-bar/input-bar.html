@@ -1,4 +1,20 @@
 <div class="input-bar">
-  <input [(ngModel)]="prompt" type="text" placeholder="Écris ton message..." (keyup.enter)="sendMessage()" />
-  <button (click)="sendMessage()">Envoyer</button>
+  <input
+    [(ngModel)]="prompt"
+    type="text"
+    placeholder="Écris ton message..."
+    (keyup.enter)="sendMessage()" />
+
+  <button class="upload-btn" (click)="fileInput.click()">📎</button>
+  <input #fileInput type="file" multiple hidden (change)="onFileSelect($event)" />
+
+  <button class="send-btn" (click)="sendMessage()">Envoyer</button>
+</div>
+
+<!-- Fichiers sélectionnés -->
+<div class="selected-files" *ngIf="selectedFiles.length">
+  <div class="file" *ngFor="let file of selectedFiles; let i = index">
+    {{ file.name }}
+    <span class="remove" (click)="removeFile(i)">✖</span>
+  </div>
 </div>

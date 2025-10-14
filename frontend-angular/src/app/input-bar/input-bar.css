@@ -1,56 +1,58 @@
 .input-bar {
   display: flex;
+  align-items: center;
+  gap: 8px;
   border-top: 1px solid #ddd;
   padding: 10px;
   background: white;
 }
 
-.input-bar input {
-  flex: 1;
-  padding: 10px;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  margin-right: 10px;
-}
-
-.input-bar button {
-  padding: 10px 15px;
-  border: none;
-  background-color: #3498db;
-  color: white;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.input-bar button:hover {
-  background-color: #2980b9;
-}
-.input-bar {
-  display: flex;
-  gap: 5px;
-  align-items: center;
-}
-
 .input-bar input[type="text"] {
   flex: 1;
-  padding: 8px;
-  border-radius: 5px;
+  padding: 10px;
+  border-radius: 6px;
   border: 1px solid #ccc;
 }
 
-.input-bar button,
-.input-bar .upload-btn {
+.upload-btn, .send-btn {
   padding: 8px 12px;
   border: none;
-  border-radius: 5px;
+  border-radius: 6px;
   cursor: pointer;
-}
-
-.input-bar .upload-btn {
-  background: #6c757d;
   color: white;
 }
 
-.input-bar .upload-btn:hover {
-  background: #5a6268;
+.upload-btn {
+  background-color: #6c757d;
+}
+.upload-btn:hover {
+  background-color: #5a6268;
+}
+
+.send-btn {
+  background-color: #007bff;
+}
+.send-btn:hover {
+  background-color: #0056b3;
+}
+
+.selected-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 5px 10px;
+}
+
+.file {
+  background: #f1f1f1;
+  padding: 4px 8px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.remove {
+  color: red;
+  cursor: pointer;
 }
