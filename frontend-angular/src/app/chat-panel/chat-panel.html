@@ -1,27 +1,18 @@
 <div class="chat-panel">
-  <h3 *ngIf="activeConversation">💬 {{ activeConversation.name }}</h3>
+  <h3 *ngIf="activeConversation">💬 {{ activeConversation.title }}</h3>
 
   <div class="messages">
     <div *ngFor="let msg of messages" [ngClass]="msg.role">
       <div class="bubble">
+        <!-- 💬 Texte -->
+        <div class="text" *ngIf="msg.content">{{ msg.content }}</div>
 
-        <!-- 💬 Texte classique -->
-        <div class="text" *ngIf="!msg.file_url">{{ msg.content }}</div>
-
-        <!-- 📁 Message contenant un fichier -->
-        <div class="file-message" *ngIf="msg.file_url">
-          <a [href]="msg.file_url" target="_blank" download class="file-link">
-            <img [src]="getFileIcon(msg.content)" class="file-icon" alt="file" />
-            <span>{{ cleanFilename(msg.content) }}</span>
-          </a>
-        </div>
-
-        <!-- (optionnel) anciens messages avec plusieurs fichiers -->
+        <!-- 📎 Liste des fichiers liés -->
         <div *ngIf="msg.files?.length" class="file-list">
           <div *ngFor="let file of msg.files" class="file-item">
-            <a [href]="file.url" target="_blank" download class="file-link">
-              <img [src]="getFileIcon(file.filename)" class="file-icon" />
-              <span>{{ file.filename }}</span>
+            <a [href]="file.file_url" target="_blank" download class="file-link">
+              <img [src]="getFileIcon(file.file_name)" class="file-icon" />
+              <span>{{ file.file_name }}</span>
             </a>
           </div>
         </div>
@@ -31,7 +22,7 @@
 
   <app-input-bar
     class="input-bar"
-    [convId]="activeConversation?._id"
+    [convId]="activeConversation?.id"
     (send)="onSendMessage($event)">
   </app-input-bar>
 </div>

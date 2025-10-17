@@ -5,46 +5,41 @@ import { environment } from '../../../environments/environment';
 
 @Injectable({ providedIn: 'root' })
 export class HistoryService {
-  private apiUrl = environment.historyApiUrl;
+  /** URL du backend Node (proxy vers FastAPI) — ex : http://127.0.0.1:3000 */
+  private baseUrl = environment.serverUrl;
+
   private activeConversation = new BehaviorSubject<any | null>(null);
   activeConversation$ = this.activeConversation.asObservable();
 
   constructor(private http: HttpClient) {}
 
-  getConversations(id?: string): Observable<any[]> {
-    const url = id ? `${this.apiUrl}/${id}` : this.apiUrl;
-    return this.http.get<any[]>(url);
+  /** 🔹 Récupère toutes les conversations */
+ getConversations(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.baseUrl}/conversations`);
   }
 
-  createConversation(title: string) {
-    return this.http.post<any>(this.apiUrl, { title });
+  /** 🔹 Récupère les messages d’une conversation */
+  getMessages(id: string): Observable<any[]> {
+    return this.http.get<any[]>(`${this.baseUrl}/api/chat/messages/${id}`);
   }
 
-  renameConversation(id: string, newtitle: string) {
-    return this.http.put<any>(`${this.apiUrl}/${id}`, { title: newtitle });
+  /** 🔹 Crée une nouvelle conversation */
+  createConversation(title: string): Observable<any> {
+    return this.http.post(`${this.baseUrl}/conversations`, { title });
   }
 
-  addMessage(id: string, role: string, content: string) {
-    return this.http.post<any>(`${this.apiUrl}/${id}/messages`, { role, content });
+  /** 🔹 Renomme une conversation existante */
+  renameConversation(id: string, newTitle: string): Observable<any> {
+    return this.http.put(`${this.baseUrl}/api/chat/messages/${id}`, { title: newTitle });
   }
 
-  getMessages(id: string) {
-    return this.http.get<any[]>(`${this.apiUrl}/${id}/messages`);
+  /** 🔹 Supprime une conversation */
+  deleteConversation(id: string): Observable<any> {
+    return this.http.delete(`${this.baseUrl}/api/chat/messages/${id}`);
   }
 
+  /** 🔹 Définit la conversation active */
   setActiveConversation(convo: any) {
     this.activeConversation.next(convo);
-  }
-
-  deleteConversation(id: string) {
-    return this.http.delete(`${this.apiUrl}/${id}`);
-  }
-
-  sendToLLM(question: string, _id: any) {
-    return this.http.post<any>(environment.chatApiUrl, { question });
-  }
-
-  uploadFile(conversationId: string, formData: FormData) {
-    return this.http.post<any>(`${this.apiUrl}/${conversationId}/upload`, formData);
   }
 }

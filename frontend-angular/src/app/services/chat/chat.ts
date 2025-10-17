@@ -4,31 +4,33 @@ import { Observable, Subject } from 'rxjs';
 import { environment } from '../../../environments/environment';
 
 interface ChatResponse {
+  summary: string;
   steps: string[];
-  citations: string[];
+  citations: { doc: string; score: number; snippet: string }[];
+  conversation_id: string;
 }
 
 @Injectable({ providedIn: 'root' })
 export class ChatService {
-  private apiUrl = environment.chatApiUrl;      
-  private uploadUrl = environment.uploadApiUrl; 
+  private baseUrl = environment.serverUrl; // ex: http://127.0.0.1:3000
   private botMessage$ = new Subject<string>();
   botMessageObs = this.botMessage$.asObservable();
 
   constructor(private http: HttpClient) {}
 
-  /** Émet un message bot local (affichage côté front) */
+  /** Permet d'afficher un message bot local */
   pushBotMessage(msg: string) {
     this.botMessage$.next(msg);
   }
 
-  /** Envoie la question texte au backend */
-  sendQuestion(question: string): Observable<ChatResponse> {
-    return this.http.post<ChatResponse>(this.apiUrl, { question });
-  }
+  /** Envoi d’un message (texte + fichiers) vers FastAPI via Express */
+  sendMessage(convId: string, formData: FormData) {
+  return this.http.post(`http://127.0.0.1:3000/api/chat/message/${convId}`, formData);
+}
 
-  /** Upload de fichiers pour une conversation spécifique */
-  uploadFiles(convId: string, formData: FormData): Observable<any> {
-    return this.http.post(`${this.uploadUrl}/${convId}`, formData);
+
+  /** Pose une question au LLM RAG */
+  askLLM(question: string, convId?: string): Observable<ChatResponse> {
+    return this.http.post<ChatResponse>(`${this.baseUrl}/api/chat`, { question, conv_id: convId });
   }
 }

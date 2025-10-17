@@ -1,13 +1,16 @@
 <div class="input-bar">
+  <!-- Champ texte -->
   <input
     [(ngModel)]="prompt"
     type="text"
     placeholder="Écris ton message..."
     (keyup.enter)="sendMessage()" />
 
+  <!-- Bouton d’ajout de fichiers -->
   <button class="upload-btn" (click)="fileInput.click()">📎</button>
   <input #fileInput type="file" multiple hidden (change)="onFileSelect($event)" />
 
+  <!-- Bouton d’envoi -->
   <button class="send-btn" (click)="sendMessage()">Envoyer</button>
 </div>
 

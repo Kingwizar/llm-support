@@ -26,9 +26,13 @@ export class History {
 
   loadConversations() {
     this.historyService.getConversations().subscribe({
-      next: (res) => (this.conversations = res),
-      error: (err) => console.error('Erreur chargement conversations', err)
-    });
+  next: (data) => {
+    console.log("✅ Conversations reçues depuis backend :", data);
+    this.conversations = data;
+  },
+  error: (err) => console.error("❌ Erreur getConversations Angular :", err)
+});
+
   }
 
   selectConversation(convo: any) {
@@ -52,7 +56,7 @@ export class History {
     event.stopPropagation(); 
     const newName = prompt('Nouveau nom :', convo.title);
     if (newName && newName.trim()) {
-      this.historyService.renameConversation(convo._id, newName).subscribe({
+      this.historyService.renameConversation(convo.id, newName).subscribe({
         next: () => this.loadConversations()
       });
     }

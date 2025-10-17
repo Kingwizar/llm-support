@@ -1,22 +1,18 @@
-from fastapi import FastAPI, Request, HTTPException, File, UploadFile
+from fastapi import FastAPI, Request, HTTPException, File, UploadFile, Form
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List
+from typing import List, Optional
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 from bson import ObjectId
-import logging, time
-from llm.rag_core import answer_with_rag_or_web, rag_prepare
-from llm.prompt_builder import build_prompt_from_extracted_file
-import os
-from dotenv import load_dotenv
-from fastapi.responses import JSONResponse, StreamingResponse
+import logging, time, os
 from io import BytesIO
 from datetime import datetime
+from dotenv import load_dotenv
+from fastapi.responses import StreamingResponse
+from llm.rag_core import rag_prepare
+from llm.prompt_builder import build_prompt_from_extracted_file
 from ingest.file_ingest import extract_text_from_file
-from ingest.extractors.pdf_extractor import extract_pdf_text
 from ingest.web_search import simple_web_search
-import sys, os
-sys.path.append(os.path.dirname(__file__))
 
 # ======================================================
 # ----------------- CONFIGURATION ----------------------
@@ -25,19 +21,20 @@ sys.path.append(os.path.dirname(__file__))
 load_dotenv()
 
 APP_ENV = os.getenv("APP_ENV")
-APP_PORT = int(os.getenv("APP_PORT"))
-APP_HOST = os.getenv("APP_HOST")
-print(APP_PORT)
+APP_PORT = int(os.getenv("APP_PORT", "8000"))
+APP_HOST = os.getenv("APP_HOST", "127.0.0.1")
+
+# Optionnel: si tu veux forcer les URLs de download à passer par Express
+# Exemple: PUBLIC_BASE_URL=http://127.0.0.1:3000/api/chat
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL")  # p.ex. "http://127.0.0.1:3000/api/chat"
 
 MONGO_URI = os.getenv("MONGO_URI")
 MONGO_DB = os.getenv("MONGO_DB")
-
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "").split(",")
 
-app = FastAPI()
+app = FastAPI(title="LLM Chat API")
 logger = logging.getLogger("uvicorn.error")
 
-# --- CORS ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS if CORS_ORIGINS != [""] else ["*"],
@@ -45,22 +42,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-class ChatRequest(BaseModel):
-    question: str
-    conv_id: str | None = None  # ⬅️ optionnel : pour insérer la réponse dans la conversation
-
-class Citation(BaseModel):
-    doc: str
-    score: float
-    snippet: str
-
-class ChatResponse(BaseModel):
-    summary: str
-    steps: List[str]
-    citations: List[Citation]
-    conversation_id: str
 
 # ======================================================
 # ----------------- MONGO CONNEXION --------------------
@@ -71,42 +52,20 @@ db = client[MONGO_DB]
 conversations = db["conversations"]
 fs = AsyncIOMotorGridFSBucket(db)
 
-logger.info(f"🔗 Connexion Mongo établie sur {MONGO_URI}, base = {MONGO_DB}")
+logger.info(f"🔗 MongoDB connecté à {MONGO_URI}/{MONGO_DB}")
 
 # ======================================================
-# ----------------- HELPERS -----------------------------
+# ----------------- MODELS -----------------------------
 # ======================================================
 
-def conv_helper(conv) -> dict:
-    return {
-        "id": str(conv["_id"]),
-        "title": conv.get("title") or "(Sans titre)",
-        "messages": [
-            {
-                "id": str(m.get("_id")) if "_id" in m else None,
-                "role": m.get("role") or ("user" if m.get("isUser") else "bot"),
-                "content": m.get("content") or "",
-                "file_url": m.get("file_url"),
-                "file_name": m.get("file_name"),
-                "file_id": m.get("file_id"),
-            }
-            for m in conv.get("messages", [])
-        ],
-    }
-
-
-
-# ======================================================
-# ----------------- MODELS ------------------------------
-# ======================================================
-
-class QuestionRequest(BaseModel):
+class ChatRequest(BaseModel):
     question: str
+    conv_id: Optional[str] = None
 
 class Citation(BaseModel):
     doc: str
     score: float
-    snippet: str
+    snippet: Optional[str] = ""   # <= facultatif pour éviter l’erreur de validation
 
 class ChatResponse(BaseModel):
     summary: str
@@ -117,128 +76,124 @@ class ChatResponse(BaseModel):
 class ConversationCreate(BaseModel):
     title: str
 
-class MessageCreate(BaseModel):
-    content: str
-    role: str
+# ======================================================
+# ----------------- HELPERS ----------------------------
+# ======================================================
+
+def clean_message(msg):
+    """Nettoie les ObjectId pour être JSON-safe"""
+    return {
+        "_id": str(msg.get("_id")) if msg.get("_id") else None,
+        "role": msg.get("role"),
+        "content": msg.get("content", ""),
+        "isUser": msg.get("isUser", False),
+        "uploaded_at": msg.get("uploaded_at").isoformat() if msg.get("uploaded_at") else None,
+        "files": [
+            {
+                "file_id": str(f.get("file_id")) if f.get("file_id") else None,
+                "file_name": f.get("file_name"),
+                "file_url": f.get("file_url"),
+                "content_type": f.get("content_type"),
+                "rag_context": f.get("rag_context"),
+                "uploaded_at": f.get("uploaded_at").isoformat() if f.get("uploaded_at") else None,
+            }
+            for f in msg.get("files", [])
+        ],
+    }
+
+def conv_helper(conv) -> dict:
+    """Convertit un document Mongo conversation → dict sérialisable"""
+    return {
+        "id": str(conv["_id"]),
+        "title": conv.get("title", "(Sans titre)"),
+        "messages": [clean_message(m) for m in conv.get("messages", [])],
+    }
+
+def make_file_url(file_id: str) -> str:
+    """Construit l’URL de téléchargement visible par le front."""
+    if PUBLIC_BASE_URL:
+        # p.ex. http://127.0.0.1:3000/api/chat/file/<id>
+        return f"{PUBLIC_BASE_URL.rstrip('/')}/file/{file_id}"
+    # sinon, lien direct FastAPI
+    return f"http://127.0.0.1:{APP_PORT}/file/{file_id}"
 
 # ======================================================
-# ----------------- ROUTES CHAT -------------------------
+# ----------------- ROUTES CONVERSATIONS ---------------
 # ======================================================
 
 @app.get("/conversations")
 async def get_conversations():
-    convs = await conversations.find().to_list(100)
-    return [conv_helper(c) for c in convs]
+    try:
+        convs = await conversations.find().to_list(100)
+        return [conv_helper(c) for c in convs]
+    except Exception as e:
+        logger.error(f"❌ Erreur get_conversations : {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/conversations/{conv_id}/messages")
+async def get_messages(conv_id: str):
+    try:
+        conv = await conversations.find_one({"_id": ObjectId(conv_id)})
+        if not conv:
+            raise HTTPException(status_code=404, detail="Conversation introuvable")
+        return [clean_message(m) for m in conv.get("messages", [])]
+    except Exception as e:
+        logger.error(f"❌ Erreur get_messages : {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/conversations")
 async def create_conversation(data: ConversationCreate):
     result = await conversations.insert_one({
         "title": data.title,
         "messages": [],
+        "created_at": datetime.utcnow()
     })
     new_conv = await conversations.find_one({"_id": result.inserted_id})
     return conv_helper(new_conv)
 
-@app.post("/conversations/{conv_id}/messages")
-async def add_message(conv_id: str, data: MessageCreate):
-    msg = {
-        "role": data.role,
-        "content": data.content,
-        "isUser": data.role == "user",
-    }
+@app.put("/conversations/{conv_id}")
+async def rename_conversation(conv_id: str, data: dict):
+    new_title = data.get("title")
+    if not new_title:
+        raise HTTPException(status_code=400, detail="Titre manquant")
     await conversations.update_one(
         {"_id": ObjectId(conv_id)},
-        {"$push": {"messages": msg}},
+        {"$set": {"title": new_title}}
     )
     conv = await conversations.find_one({"_id": ObjectId(conv_id)})
     return conv_helper(conv)
 
+@app.delete("/conversations/{conv_id}")
+async def delete_conversation(conv_id: str):
+    result = await conversations.delete_one({"_id": ObjectId(conv_id)})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Conversation introuvable")
+    return {"success": True}
+
+
+
 # ======================================================
-# ----------------- ROUTE RAG / CHAT --------------------
+# ----------------- ROUTE MESSAGE ----------------------
 # ======================================================
 
-@app.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest):
+@app.post("/message/{conv_id}")
+async def send_message(
+    conv_id: str,
+    text: str = Form(""),
+    files: List[UploadFile] = File(default=[])
+):
     """
-    Appel du pipeline RAG pour générer une réponse et l’enregistrer dans la conversation.
-    """
-    try:
-        logger.info(f"💬 Requête RAG : {req.question}")
-        pack = rag_prepare(req.question) #pack = answer_with_rag_or_web(req.question) 
-
-        # 🧠 Simulation RAG
-        fake_summary = f"Réponse simulée pour la question: '{req.question}'"
-        fake_steps = [
-            "Étape 1 : Analyser la documentation associée",
-            "Étape 2 : Vérifier les procédures internes",
-            "Étape 3 : Contacter le support si besoin",
-        ]
-        citations = [
-            {
-                "doc": h["doc"],
-                "score": h["score"],
-                "snippet": next(
-                    (s for s in pack["sources_block"].splitlines() if h["doc"] in s),
-                    "",
-                )[:200],
-            }
-            for h in pack["citations"]
-        ]
-
-        # 🧩 Construction du texte de réponse
-        bot_text = "\n".join(fake_steps)
-        if citations:
-            srcs = ", ".join([c["doc"] for c in citations])
-            bot_text += f"\n📚 Sources: {srcs}"
-
-        # 🗄️ Enregistrement dans la conversation si conv_id est fourni
-        if req.conv_id:
-            await conversations.update_one(
-                {"_id": ObjectId(req.conv_id)},
-                {"$push": {
-                    "messages": {
-                        "role": "bot",
-                        "content": bot_text.strip(),
-                        "isUser": False
-                    }
-                }}
-            )
-            logger.info(f"✅ Réponse bot enregistrée dans la conversation {req.conv_id}")
-        else:
-            logger.warning("⚠️ Aucun conv_id fourni, réponse non enregistrée en base")
-
-        # ✅ Retour au frontend
-        return ChatResponse(
-            summary=fake_summary,
-            steps=fake_steps,
-            citations=citations,
-            conversation_id=req.conv_id or "no-conv-id"
-        )
-
-    except Exception as e:
-        logger.error(f"❌ Erreur dans /chat : {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ======================================================
-# ----------------- UPLOAD FICHIERS ---------------------
-# ======================================================
-
-@app.post("/upload/{conv_id}")
-async def upload_files(conv_id: str, files: List[UploadFile] = File(...)):
-    """
-    Reçoit des fichiers, les stocke dans MongoDB (GridFS),
-    extrait leur contenu pour RAG (en interne),
-    et ajoute un message dans la conversation avec un lien de téléchargement.
+    Reçoit un message utilisateur (texte + fichiers).
+    Stocke chaque fichier dans GridFS, enregistre les métadonnées dans la collection 'files',
+    et ajoute un unique message à la conversation.
     """
     try:
         saved_files = []
 
         for file in files:
             data = await file.read()
-            logger.info(f"📦 Réception du fichier : {file.filename} ({len(data)} bytes)")
 
-            # 1️⃣ Enregistrer le fichier dans MongoDB GridFS
+            # 1) Stockage binaire (GridFS)
             file_id = await fs.upload_from_stream(
                 file.filename,
                 BytesIO(data),
@@ -249,7 +204,7 @@ async def upload_files(conv_id: str, files: List[UploadFile] = File(...)):
                 },
             )
 
-            # 2️⃣ Sauvegarder les métadonnées dans la collection "files"
+            # 2) (IMPORTANT) Métadonnées du fichier dans la collection 'files'
             await db["files"].insert_one({
                 "_id": file_id,
                 "filename": file.filename,
@@ -259,7 +214,7 @@ async def upload_files(conv_id: str, files: List[UploadFile] = File(...)):
                 "conversation_id": conv_id,
             })
 
-            # 3️⃣ Extraire le texte du fichier pour le système RAG
+            # 3) Extraction + RAG (optionnelle)
             tmp_path = f"/tmp/{file.filename}"
             with open(tmp_path, "wb") as f:
                 f.write(data)
@@ -267,79 +222,154 @@ async def upload_files(conv_id: str, files: List[UploadFile] = File(...)):
             try:
                 extracted = extract_text_from_file(tmp_path)
                 file_prompt = build_prompt_from_extracted_file(extracted)
-                rag_data = rag_prepare(file_prompt)
-                logger.info(f"📄 Texte extrait pour RAG ({file.filename})")
+                rag_data = rag_prepare(file_prompt) or {}
             except Exception as e:
-                rag_data = {"sources_block": ""}
-                logger.warning(f"⚠️ Échec extraction RAG pour {file.filename}: {e}")
+                rag_data = {}
+                logger.warning(f"⚠️ Extraction RAG échouée pour {file.filename}: {e}")
             finally:
-                os.remove(tmp_path)
+                try:
+                    os.remove(tmp_path)
+        
+                except FileNotFoundError:
+                    pass
 
-            # 4️⃣ Ajouter le message utilisateur avec lien de téléchargement
-            file_url = f"http://127.0.0.1:{APP_PORT}/file/{file_id}"
+            saved_files.append({
+                "file_id": str(file_id),
+                "file_name": file.filename,
+                "file_url": make_file_url(str(file_id)),  # <= lien vers /file/<id>
+                "content_type": file.content_type,
+                "rag_context": rag_data.get("sources_block", ""),
+                "uploaded_at": datetime.utcnow()
+            })
+
+        # 4) Ajout d’un seul message côté conversation
+        message_doc = {
+            "role": "user",
+            "content": (text or "").strip(),
+            "isUser": True,
+            "files": saved_files,
+            "uploaded_at": datetime.utcnow()
+        }
+
+        await conversations.update_one(
+            {"_id": ObjectId(conv_id)},
+            {"$push": {"messages": message_doc}}
+        )
+
+        logger.info(f"💬 Message enregistré (texte + {len(saved_files)} fichiers) dans {conv_id}")
+        return {
+            "message": "✅ Enregistré",
+            "files": saved_files,
+            "content": (text or "").strip(),
+            "conversation_id": conv_id
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Erreur send_message : {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ======================================================
+# ----------------- ROUTE CHAT (RAG) -------------------
+# ======================================================
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(req: ChatRequest):
+    """
+    Pipeline RAG simplifié
+    """
+    try:
+        logger.info(f"💬 Requête RAG : {req.question}")
+        pack = rag_prepare(req.question) or {}
+
+        fake_summary = f"Réponse simulée pour : '{req.question}'"
+        fake_steps = [
+            "Étape 1 : Analyse de la question",
+            "Étape 2 : Recherche dans la base de connaissances",
+            "Étape 3 : Synthèse de la réponse"
+        ]
+        # normalise les citations pour respecter le modèle Pydantic
+        citations = [
+            {
+                "doc": c.get("doc", ""),
+                "score": float(c.get("score", 0.0)),
+                "snippet": c.get("snippet", "")
+            }
+            for c in pack.get("citations", [])
+        ]
+
+        bot_text = "\n".join(fake_steps)
+        if citations:
+            srcs = ", ".join([c["doc"] for c in citations if c.get("doc")])
+            if srcs:
+                bot_text += f"\n📚 Sources: {srcs}"
+
+        if req.conv_id:
             await conversations.update_one(
-                {"_id": ObjectId(conv_id)},
+                {"_id": ObjectId(req.conv_id)},
                 {"$push": {"messages": {
-                    "role": "user",
-                    "content": f"📎 {file.filename}",
-                    "file_id": str(file_id),
-                    "file_url": file_url,
-                    "rag_context": rag_data["sources_block"],
-                    "isUser": True,
+                    "role": "bot",
+                    "content": bot_text,
+                    "isUser": False,
                     "uploaded_at": datetime.utcnow()
                 }}}
             )
 
-            logger.info(f"💾 Fichier {file.filename} sauvegardé et référencé dans la conversation.")
-
-            saved_files.append({
-                "id": str(file_id),
-                "filename": file.filename,
-                "content_type": file.content_type,
-                "size": len(data),
-                "url": file_url,
-            })
-
-        return {"message": "✅ Fichiers enregistrés avec succès", "files": saved_files}
+        return ChatResponse(
+            summary=fake_summary,
+            steps=fake_steps,
+            citations=citations,
+            conversation_id=req.conv_id or "no-conv-id"
+        )
 
     except Exception as e:
-        logger.error(f"❌ Erreur upload : {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Erreur upload : {str(e)}")
-    
+        logger.error(f"❌ Erreur /chat : {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ======================================================
+# ----------------- ROUTE FICHIERS ---------------------
+# ======================================================
+
 @app.get("/file/{file_id}")
 async def get_file(file_id: str):
-    """
-    Télécharge un fichier stocké dans MongoDB GridFS.
-    """
     try:
         oid = ObjectId(file_id)
         meta = await db["files"].find_one({"_id": oid})
         if not meta:
+            logger.error(f"❌ [FastAPI] Fichier {file_id} introuvable dans 'files'")
             raise HTTPException(status_code=404, detail="Fichier introuvable")
 
-        # 🔹 Lecture du fichier depuis GridFS
         stream = BytesIO()
         await fs.download_to_stream(oid, stream)
         stream.seek(0)
 
-        logger.info(f"📤 Fichier téléchargé : {meta['filename']} ({meta['size']} bytes)")
+        logger.info(f"📤 [FastAPI] Fichier envoyé : {meta['filename']} ({meta['content_type']})")
+        logger.info(f"🔗 [FastAPI] URL générée : http://{APP_HOST}:{APP_PORT}/file/{file_id}")
 
         return StreamingResponse(
             stream,
             media_type=meta.get("content_type", "application/octet-stream"),
-            headers={
-                "Content-Disposition": f"attachment; filename={meta['filename']}"
-            }
+            headers={"Content-Disposition": f"attachment; filename={meta['filename']}"}
         )
 
     except Exception as e:
-        logger.error(f"❌ Erreur lors du téléchargement du fichier : {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Erreur téléchargement : {str(e)}")  
-
+        logger.error(f"❌ [FastAPI] Erreur téléchargement : {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erreur téléchargement : {str(e)}")
 
 
 # ======================================================
-# ----------------- LOGGING GLOBAL ----------------------
+# ----------------- WEBSEARCH --------------------------
+# ======================================================
+
+@app.post("/websearch")
+async def web_search(req: dict):
+    query = req.get("query", "").strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="Query vide")
+    results = simple_web_search(query)
+    return {"query": query, "results": results}
+
+# ======================================================
+# ----------------- LOGGING GLOBAL ---------------------
 # ======================================================
 
 @app.middleware("http")
@@ -347,7 +377,7 @@ async def log_requests(request: Request, call_next):
     idem = hex(id(request))
     try:
         body = await request.body()
-        body_str = body.decode("utf-8", errors="ignore")[:500]
+        body_str = body.decode("utf-8", errors="ignore")[:200]
         logger.info(f"📥 [{idem}] {request.method} {request.url} body={body_str}")
         start = time.time()
         response = await call_next(request)
@@ -357,18 +387,3 @@ async def log_requests(request: Request, call_next):
     except Exception as e:
         logger.error(f"❌ [{idem}] Exception: {str(e)}", exc_info=True)
         raise
-
-
-# ======================================================
-# ----------------- websearch ----------------------
-# ======================================================
-
-@app.post("/websearch")
-async def web_search(req: dict):
-    query = req.get("query", "").strip()
-    if not query:
-        raise HTTPException(status_code=400, detail="Query vide")
-
-    results = simple_web_search(query)
-    logger.info(f"🌐 Recherche web pour '{query}' : {len(results)} résultats")
-    return {"query": query, "results": results}

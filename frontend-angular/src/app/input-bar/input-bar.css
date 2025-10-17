@@ -12,6 +12,7 @@
   padding: 10px;
   border-radius: 6px;
   border: 1px solid #ccc;
+  font-size: 14px;
 }
 
 .upload-btn, .send-btn {
@@ -20,6 +21,7 @@
   border-radius: 6px;
   cursor: pointer;
   color: white;
+  font-size: 14px;
 }
 
 .upload-btn {
@@ -55,4 +57,5 @@
 .remove {
   color: red;
   cursor: pointer;
+  font-weight: bold;
 }

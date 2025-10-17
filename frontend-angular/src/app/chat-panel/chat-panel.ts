@@ -5,22 +5,19 @@ import { ChatService } from '../services/chat/chat';
 import { InputBar } from '../input-bar/input-bar';
 
 interface UploadedFile {
-  id: string;
-  filename: string;
-  content_type: string;
-  url: string;
+  file_id: string;
+  file_name: string;
+  file_url: string;
+  content_type?: string;
+  uploaded_at?: string;
 }
 
 interface Message {
-  _id?: string;
   role: string;
-  content: string;
-  file_id?: string;
-  file_url?: string;
-  isUser?: boolean;
-  rag_context?: string;
-  uploaded_at?: string;
+  content?: string;
   files?: UploadedFile[];
+  isUser?: boolean;
+  uploaded_at?: string;
 }
 
 @Component({
@@ -37,48 +34,79 @@ export class ChatPanelComponent implements OnInit {
   constructor(private history: HistoryService, private chat: ChatService) {}
 
   ngOnInit() {
-    this.history.activeConversation$.subscribe(c => {
-      this.activeConversation = c;
-      if (c?._id)
-        this.history.getMessages(c._id).subscribe(m => (this.messages = m));
-      else this.messages = [];
+    // Quand une conversation devient active
+    this.history.activeConversation$.subscribe(conv => {
+      this.activeConversation = conv;
+      if (conv?.id || conv?._id) {
+        this.history.getMessages(conv.id || conv._id).subscribe(msgs => {
+          this.messages = msgs;
+          console.log("💬 Messages chargés:", msgs.length);
+        });
+      }
     });
   }
 
-  onSendMessage(event: { text: string; files: UploadedFile[] }) {
+  /** Envoi du message + fichiers */
+  onSendMessage(event: { text: string; files: File[] }) {
+    if (!this.activeConversation?.id && !this.activeConversation?._id) {
+      this.chat.pushBotMessage("⚠️ Aucune conversation active");
+      return;
+    }
+
+    const convId = this.activeConversation.id || this.activeConversation._id;
     const { text, files } = event;
 
-    this.messages.push({ role: 'user', content: text, files });
+    const formData = new FormData();
+    formData.append('text', text || '');
+    files.forEach(file => formData.append('files', file));
 
-    if (this.activeConversation?._id) {
-      this.history.addMessage(this.activeConversation._id, 'user', text).subscribe();
-    }
+    console.log("📤 Envoi message:", text, "fichiers:", files.length);
 
-    if (text.trim()) {
-      this.history.sendToLLM(text, this.activeConversation._id).subscribe({
-        next: (res: any) => {
-          const botResponse =
-            (res.steps?.length ? res.steps.map((s: string) => s).join('\n') : '') +
-            (res.citations?.length
-              ? `\n📚 Sources: ${res.citations.map((c: any) => c.doc).join(', ')}`
-              : '');
-          this.messages.push({ role: 'bot', content: botResponse.trim() });
-          this.history.addMessage(this.activeConversation._id, 'bot', botResponse.trim()).subscribe();
-        },
-        error: (err) => console.error('❌ Erreur API:', err)
-      });
-    }
+    this.chat.sendMessage(convId, formData).subscribe({
+      next: (res: any) => {
+        console.log("✅ Message envoyé:", res);
+
+        // Recharge les messages depuis la base pour afficher les fichiers uploadés
+        this.history.getMessages(convId).subscribe(msgs => {
+          this.messages = msgs;
+          console.log("🔄 Rechargement complet depuis la base:", msgs.length, "messages");
+        });
+
+        // Lance le RAG uniquement si un texte a été envoyé
+        if (text.trim()) {
+          this.chat.askLLM(text, convId).subscribe({
+            next: (resp) => {
+              const botMessage = {
+                role: 'bot',
+                content:
+                  (resp.steps?.length ? resp.steps.join('\n') : '') +
+                  (resp.citations?.length
+                    ? `\n📚 Sources: ${resp.citations.map(c => c.doc).join(', ')}`
+                    : ''),
+                isUser: false
+              };
+              this.messages.push(botMessage);
+            },
+            error: (err) => {
+              console.error('❌ Erreur RAG:', err);
+              this.chat.pushBotMessage('⚠️ Erreur RAG : ' + err.message);
+            }
+          });
+        }
+      },
+      error: (err) => {
+        console.error("❌ Erreur sendMessage:", err);
+        this.chat.pushBotMessage('⚠️ Erreur lors de l’envoi : ' + err.message);
+      }
+    });
   }
 
-  getFileIcon(nameOrType: string): string {
-    const name = nameOrType.toLowerCase();
-    if (name.endsWith('.pdf')) return 'assets/icons/pdf.png';
-    if (name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'assets/icons/image.png';
-    if (name.endsWith('.doc') || name.endsWith('.docx')) return 'assets/icons/doc.png';
+  /** Choix de l’icône pour un fichier */
+  getFileIcon(nameOrType?: string): string {
+    const name = nameOrType?.toLowerCase() || '';
+    if (name.endsWith('.pdf')) return 'icon/pdf.png';
+    if (name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'icon/img.png';
+    if (name.endsWith('.doc') || name.endsWith('.docx')) return 'icon/docx.png';
     return 'assets/icons/file.png';
-  }
-
-  cleanFilename(content: string): string {
-    return content.replace('📎', '').trim();
   }
 }

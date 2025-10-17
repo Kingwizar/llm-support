@@ -1,6 +1,5 @@
 // ================== IMPORTS ==================
 import express from "express";
-import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
 import path from "path";
@@ -10,45 +9,34 @@ import FormData from "form-data";
 import fs from "fs";
 import multer from "multer";
 
+// ================== CONFIG ==================
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const uploadDir = path.join(__dirname, "uploads");
+
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
 });
-const upload = multer({ storage });
+const upload = multer({ storage: multer.memoryStorage() });
 
-// ================== CONFIG ==================
-dotenv.config({ path: path.resolve(__dirname, "../.env") }); // ← charge le .env depuis la racine
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 const app = express();
-const PORT = process.env.APP_PORTT;
-const MONGO_URI = process.env.MONGO_URI + "/" + process.env.MONGO_DB;
-const CORS_ORIGINS = process.env.CORS_ORIGINS.split(",");
+const PORT = process.env.APP_PORTT || 3000;
+const FASTAPI_URL = process.env.FASTAPI_URL || "http://127.0.0.1:8000";
+const CORS_ORIGINS = process.env.CORS_ORIGINS?.split(",") || ["http://localhost:4200"];
 
-const test = process.env.MONGO_URI;
-
-console.log("MONGO_URI:", test);
-if (!MONGO_URI) {
-  console.error("❌ ERREUR : MONGO_URI non défini dans .env");
-  process.exit(1);
-}
-
-// ================== MIDDLEWARES ==================
 app.use(express.json());
-
-// --- CORS sécurisé (Angular) ---
 app.use(
   cors({
-    origin: [CORS_ORIGINS],
+    origin: CORS_ORIGINS,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     credentials: true,
   })
 );
-app.options(/.*/, cors()); // ✅ Express 5 compatible (remplace "*")
 
 // --- Logger global ---
 app.use((req, res, next) => {
@@ -56,135 +44,220 @@ app.use((req, res, next) => {
   next();
 });
 
-// ================== MONGODB ==================
-mongoose
-  .connect(MONGO_URI)
-  .then(() => console.log(`✅ Connected to MongoDB at ${MONGO_URI}`))
-  .catch((err) => console.error("❌ MongoDB error:", err));
-
-// ================== MODELS ==================
-const MessageSchema = new mongoose.Schema({
-  role: String, // "user" ou "bot"
-  content: String,
-});
-
-const ConversationSchema = new mongoose.Schema({
-  title: String,
-  messages: [MessageSchema],
-});
-
-const Conversation = mongoose.model("Conversation", ConversationSchema);
-
 // ================== ROUTES ==================
 
-// 🔹 1. Récupérer toutes les conversations
+// 🔹 1. Récupérer toutes les conversations (relay vers FastAPI)
 app.get("/conversations", async (req, res) => {
+  console.log("📥 [Express] GET /conversations reçu");
   try {
-    const convos = await Conversation.find();
-    console.log(`🧠 Conversations trouvées : ${convos.length}`);
-    res.json(convos);
+    const fastApiUrl = "http://127.0.0.1:8000/conversations";
+    const response = await axios.get(fastApiUrl);
+    console.log("✅ [Express] Réponse reçue de FastAPI :", response.data.length, "conversations");
+    res.json(response.data);
   } catch (err) {
-    console.error("❌ Erreur get /conversations :", err);
-    res.status(500).json({ error: err.message });
+    console.error("❌ [Express] Erreur lors du proxy vers FastAPI :", err.message);
+    if (err.response) console.error("🔻 FastAPI a répondu :", err.response.data);
+    res.status(500).json({ error: "Erreur Express → FastAPI" });
   }
 });
+
 
 // 🔹 2. Créer une nouvelle conversation
 app.post("/conversations", async (req, res) => {
   try {
-    const convo = new Conversation({ title: req.body.title, messages: [] });
-    await convo.save();
-    console.log(`✨ Nouvelle conversation : ${convo.title}`);
-    res.json(convo);
+    const response = await axios.post(`${FASTAPI_URL}/conversations`, req.body);
+    res.json(response.data);
   } catch (err) {
-    console.error("❌ Erreur création conversation :", err);
-    res.status(500).json({ error: err.message });
+    console.error("❌ Erreur création conversation:", err.message);
+    res.status(500).json({ error: "Erreur création conversation." });
   }
 });
 
-// 🔹 3. Renommer une conversation
-app.put("/conversations/:id", async (req, res) => {
+// 🔹 0. Récupérer les messages d’une conversation (proxy vers FastAPI)
+app.get("/api/chat/messages/:id", async (req, res) => {
+  const { id } = req.params;
+  const fastApiUrl = `${FASTAPI_URL}/conversations/${id}/messages`;
+
+  console.log(`📥 [Express] Proxy GET /api/chat/messages/${id}`);
+  console.log(`➡️ [Express] Forward vers ${fastApiUrl}`);
+
   try {
-    const convo = await Conversation.findByIdAndUpdate(
-      req.params.id,
-      { title: req.body.title },
-      { new: true }
-    );
-    console.log(`✏️ Conversation renommée : ${convo.title}`);
-    res.json(convo);
+    const response = await axios.get(fastApiUrl);
+    console.log(`✅ [Express] ${response.data.length} messages reçus de FastAPI`);
+    res.json(response.data);
   } catch (err) {
-    console.error("❌ Erreur renommage :", err);
-    res.status(500).json({ error: err.message });
+    console.error(`❌ [Express] Erreur proxy messages: ${err.message}`);
+    if (err.response)
+      console.error(`🔻 Détail FastAPI: ${err.response.status} ${err.response.statusText}`);
+    res.status(500).json({ error: "Erreur proxy messages" });
   }
 });
 
-// 🔹 4. Supprimer une conversation
-app.delete("/conversations/:id", async (req, res) => {
+
+// 🔹 3. Envoyer un message (texte + fichiers)
+app.post("/api/chat/message/:id", upload.array("files"), async (req, res) => {
+  const { id } = req.params;
+  const { text } = req.body;
+
+  console.log(`📥 [Express] Nouveau message pour conversation ${id}`);
+  console.log(`📦 [Express] Fichiers reçus : ${req.files?.length || 0}`);
+  console.log(`📝 [Express] Texte reçu : "${text || '(vide)'}"`);
+
   try {
-    const { id } = req.params;
-    await Conversation.findByIdAndDelete(id);
-    console.log(`🗑️ Conversation supprimée : ${id}`);
-    res.json({ success: true });
-  } catch (err) {
-    console.error("❌ Erreur suppression :", err);
-    res.status(500).json({ error: err.message });
-  }
-});
+    if (!id) return res.status(400).json({ error: "❌ conv_id manquant" });
 
-// 🔹 5. Ajouter un message
-app.post("/conversations/:id/messages", async (req, res) => {
-  try {
-    const convo = await Conversation.findById(req.params.id);
-    if (!convo) return res.status(404).json({ error: "Conversation introuvable" });
-
-    convo.messages.push({ role: req.body.role, content: req.body.content });
-    await convo.save();
-    console.log(`💬 Nouveau message ajouté à ${convo.title}`);
-    res.json(convo);
-  } catch (err) {
-    console.error("❌ Erreur ajout message :", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post("/api/chat/upload", upload.array("files"), async (req, res) => {
-  try {
-    if (!req.files || req.files.length === 0)
-      return res.status(400).json({ error: "Aucun fichier reçu." });
-
-    // Envoi des fichiers à FastAPI (main.py)
+    // Créer le FormData pour FastAPI
     const formData = new FormData();
-    req.files.forEach((file) =>
-      formData.append("files", fs.createReadStream(file.path))
-    );
+    formData.append("text", text || "");
 
-    const fastApiUrl = "http://127.0.0.1:8001/upload"; // 🔹 Adapter au port FastAPI
+    // Ajouter les fichiers reçus dans le form-data
+    if (Array.isArray(req.files)) {
+      for (const f of req.files) {
+        formData.append("files", f.buffer, {
+          filename: f.originalname,
+          contentType: f.mimetype,
+          knownLength: f.size,
+        });
+        console.log(`📎 [Express] Ajout buffer → ${f.originalname} (${f.mimetype}, ${f.size}o)`);
+      }
+    }
+    
+
+    // Proxy vers FastAPI
+    const fastApiUrl = `${FASTAPI_URL}/message/${id}`;
+    console.log(`➡️ [Express] Envoi vers FastAPI → ${fastApiUrl}`);
+
     const response = await axios.post(fastApiUrl, formData, {
       headers: formData.getHeaders(),
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
     });
+
+    console.log(`✅ [Express] Message transmis à FastAPI (conversation ${id})`);
+    console.log(
+      `📄 [Express] Fichiers sauvegardés : ${response.data.files?.length || 0}`
+    );
 
     res.json(response.data);
   } catch (err) {
-    console.error("❌ Erreur /api/chat/upload:", err.message);
-    res.status(500).json({ error: "Erreur durant l'upload." });
+    console.error("❌ [Express] Erreur /api/chat/message:", err.message);
+
+    if (err.response) {
+      console.error(
+        `🔻 [FastAPI] ${err.response.status} ${err.response.statusText}`
+      );
+      console.error("📬 Réponse FastAPI:", err.response.data);
+    }
+
+    res.status(500).json({
+      error: "Erreur durant l'envoi du message.",
+      detail: err.message,
+    });
+  }
+  
+
+  
+
+});
+
+
+app.put("/api/chat/messages/:id", async (req, res) => {
+  const { id } = req.params;
+  const { title } = req.body;
+  console.log(`✏️ [Express] Requête renommage pour conversation ${id} → ${title}`);
+
+  try {
+    const response = await axios.put(`${FASTAPI_URL}/conversations/${id}`, { title });
+    res.json(response.data);
+  } catch (err) {
+    console.error("❌ [Express] Erreur renommage conversation:", err.message);
+    res.status(500).json({ error: "Erreur renommage conversation FastAPI." });
   }
 });
 
-// 🔹 6. Récupérer les messages d'une conversation
-app.get("/conversations/:id/messages", async (req, res) => {
-  try {
-    const convo = await Conversation.findById(req.params.id);
-    if (!convo) return res.status(404).json({ error: "Conversation introuvable" });
+app.delete("/api/chat/messages/:id", async (req, res) => {
+  const { id } = req.params;
+  console.log(`🗑️ [Express] Suppression conversation ${id}`);
 
-    console.log(`📨 Messages récupérés pour ${convo.title} (${convo.messages.length})`);
-    res.json(convo.messages);
+  try {
+    await axios.delete(`${FASTAPI_URL}/conversations/${id}`);
+    res.json({ success: true });
   } catch (err) {
-    console.error("❌ Erreur récupération messages :", err);
-    res.status(500).json({ error: err.message });
+    console.error("❌ [Express] Erreur suppression conversation:", err.message);
+    res.status(500).json({ error: "Erreur suppression conversation FastAPI." });
+  }
+});
+
+
+// 🔹 4. Chat RAG (question / réponse)
+app.post("/api/chat", async (req, res) => {
+  try {
+    const response = await axios.post(`${FASTAPI_URL}/chat`, req.body);
+    res.json(response.data);
+  } catch (err) {
+    console.error("❌ Erreur /api/chat:", err.message);
+    res.status(500).json({ error: "Erreur RAG FastAPI." });
+  }
+});
+
+// 🔹 Proxy pour télécharger un fichier depuis FastAPI
+app.get("/api/chat/file/:id", async (req, res) => {
+  const fileId = req.params.id;
+  const fastApiUrl = `http://127.0.0.1:8000/file/${fileId}`;
+
+  console.log(`📥 [Express] Requête Angular → /api/chat/file/${fileId}`);
+  console.log(`➡️ [Express] Appel FastAPI → ${fastApiUrl}`);
+
+  try {
+    const response = await axios.get(fastApiUrl, { responseType: "stream" });
+
+    console.log(`✅ [Express] Fichier trouvé : ${response.headers["content-disposition"] || "(pas de nom)"}`);
+    console.log(`📦 [Express] Type MIME : ${response.headers["content-type"]}`);
+
+    res.setHeader("Content-Type", response.headers["content-type"] || "application/octet-stream");
+    if (response.headers["content-disposition"])
+      res.setHeader("Content-Disposition", response.headers["content-disposition"]);
+
+    response.data.pipe(res);
+  } catch (err) {
+    console.error(`❌ [Express] Erreur proxy téléchargement : ${err.message}`);
+    if (err.response) {
+      console.error(`🔻 [Express] Réponse FastAPI : ${err.response.status} ${err.response.statusText}`);
+    }
+    res.status(502).json({ error: "Erreur proxy téléchargement", detail: err.message });
+  }
+});
+
+
+
+// 🔹 5. Télécharger un fichier (relay direct vers FastAPI)
+app.get("/file/:id", async (req, res) => {
+  try {
+    const response = await axios.get(`${FASTAPI_URL}/file/${req.params.id}`, {
+      responseType: "stream",
+    });
+    res.setHeader("Content-Disposition", response.headers["content-disposition"]);
+    res.setHeader("Content-Type", response.headers["content-type"]);
+    response.data.pipe(res);
+  } catch (err) {
+    console.error("❌ Erreur téléchargement fichier:", err.message);
+    res.status(500).json({ error: "Erreur récupération fichier FastAPI." });
+  }
+});
+
+// 🔹 6. Recherche web (relay vers FastAPI)
+app.post("/api/websearch", async (req, res) => {
+  try {
+    const response = await axios.post(`${FASTAPI_URL}/websearch`, req.body);
+    res.json(response.data);
+  } catch (err) {
+    console.error("❌ Erreur /api/websearch:", err.message);
+    res.status(500).json({ error: "Erreur recherche web FastAPI." });
   }
 });
 
 // ================== START SERVER ==================
 app.listen(PORT, () => {
-  console.log(`🚀 Backend running at http://127.0.0.1:${PORT}`);
+  console.log(`🚀 Express proxy running at http://127.0.0.1:${PORT}`);
+  console.log(`🔗 Connected to FastAPI at ${FASTAPI_URL}`);
 });
