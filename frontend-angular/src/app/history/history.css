@@ -1,8 +1,8 @@
 .history {
   padding: 0 15px;
-  background: #fafafa;
-  border-left: 1px solid #ddd;
-  height: 100vh; /* prend tout l'écran */
+  background: #FDFBF5; /* Fond ivoire clair */
+  border-left: 1px solid #9C9873; /* DeepOlive */
+  height: 100vh;
   display: flex;
   flex-direction: column;
   position: relative;
@@ -12,18 +12,19 @@
 .history h3 {
   text-align: center;
   font-size: 1.3em;
-  color: #2c3e50;
+  color: #1E1C14; /* Texte foncé */
   font-weight: bold;
   margin: 0;
   padding: 12px;
-  background: #f8f8f8;
-  border-bottom: 1px solid #ddd;
+  background: #FFF8CC; /* Doré très clair */
+  border-bottom: 1px solid #9C9873;
   position: sticky;
   top: 0;
   z-index: 2;
+  letter-spacing: 0.5px;
 }
 
-/* --- Liste défilante entre le header et le footer --- */
+/* --- Liste défilante --- */
 .conversation-list {
   display: flex;
   flex-direction: column;
@@ -38,23 +39,28 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 12px;
-  background: white;
-  border-radius: 6px;
-  border: 1px solid #ddd;
+  padding: 10px 14px;
+  background: #FFFFFF;
+  border-radius: 10px;
+  border: 1px solid #D9D6B2; /* ton clair olive */
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.25s ease;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
 
 .conversation-item:hover {
-  background: #f0f7ff;
-  border-color: #007bff;
+  background: #FFF3B0; /* Doré pâle */
+  border-color: #E8C602; /* GoldYellow */
+  transform: translateY(-2px);
+  box-shadow: 0 3px 6px rgba(0,0,0,0.1);
 }
 
 .conversation-item.active {
-  background: #007bff;
-  color: white;
+  background: #E8C602; /* Doré principal */
+  color: #1E1C14; /* Texte foncé pour contraste */
   font-weight: bold;
+  border-color: #C9B600;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.15);
 }
 
 .conversation-item button {
@@ -64,40 +70,57 @@
   cursor: pointer;
   font-size: 14px;
   padding: 4px;
+  transition: transform 0.2s ease;
+}
+
+.conversation-item button:hover {
+  transform: scale(1.2);
 }
 
 /* --- Barre d’ajout fixée en bas --- */
 .add-convo {
   position: sticky;
   bottom: 0;
-  background: #f8f8f8;
-  border-top: 1px solid #ddd;
+  background: #FFF8CC; /* Doré très clair */
+  border-top: 1px solid #9C9873;
   display: flex;
-  gap: 6px;
-  padding: 10px 0;
+  gap: 8px;
+  padding: 10px;
   z-index: 2;
 }
 
 /* --- Champ texte --- */
 .add-convo input {
   flex: 1;
-  padding: 8px;
-  border-radius: 6px;
-  border: 1px solid #ccc;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #9C9873;
+  background: #FFFFFF;
+  color: #1E1C14;
   outline: none;
+  font-size: 14px;
+  transition: border-color 0.2s ease;
+}
+
+.add-convo input:focus {
+  border-color: #E8C602;
+  box-shadow: 0 0 5px rgba(232,198,2,0.3);
 }
 
 /* --- Bouton Ajouter --- */
 .add-convo button {
-  padding: 8px 12px;
-  background: #28a745;
-  color: white;
+  padding: 8px 14px;
+  background: #E8C602; /* GoldYellow */
+  color: #1E1C14;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
-  transition: background 0.2s;
+  font-weight: 600;
+  transition: all 0.25s ease;
 }
 
 .add-convo button:hover {
-  background: #218838;
+  background: #FFE55C; /* Doré clair */
+  transform: translateY(-2px);
+  box-shadow: 0 3px 6px rgba(0,0,0,0.15);
 }

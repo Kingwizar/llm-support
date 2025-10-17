@@ -7,7 +7,7 @@
     <div
       *ngFor="let convo of conversations"
       class="conversation-item"
-      [class.active]="selectedConversation?._id === convo._id"
+      [class.active]="selectedConversation?.id === convo.id"
       (click)="selectConversation(convo)"
     >
       <span>{{ convo.title || '(Sans titre)' }}</span>

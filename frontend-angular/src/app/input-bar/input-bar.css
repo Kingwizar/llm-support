@@ -2,42 +2,64 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  border-top: 1px solid #ddd;
+  border-top: 1px solid #9C9873; /* DeepOlive */
   padding: 10px;
-  background: white;
+  background: #FDFBF5; /* IvoryWhite */
 }
 
+/* --------- CHAMP DE TEXTE --------- */
 .input-bar input[type="text"] {
   flex: 1;
   padding: 10px;
-  border-radius: 6px;
-  border: 1px solid #ccc;
+  border-radius: 8px;
+  border: 1px solid #9C9873; /* DeepOlive */
   font-size: 14px;
+  background: #FFFFFF;
+  color: #1E1C14; /* TextDark */
+  transition: all 0.25s ease;
 }
 
-.upload-btn, .send-btn {
-  padding: 8px 12px;
+.input-bar input[type="text"]:focus {
+  outline: none;
+  border-color: #E8C602; /* GoldYellow */
+  box-shadow: 0 0 6px rgba(232, 198, 2, 0.4);
+}
+
+/* --------- BOUTONS --------- */
+.upload-btn,
+.send-btn {
+  padding: 8px 14px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
-  color: white;
+  color: #FFFFFF;
+  font-weight: 600;
   font-size: 14px;
+  transition: all 0.3s ease;
 }
 
+/* Bouton Upload — olive clair */
 .upload-btn {
-  background-color: #6c757d;
+  background-color: #9C9873; /* DeepOlive */
 }
 .upload-btn:hover {
-  background-color: #5a6268;
+  background-color: #70704C; /* SoftBrown */
+  transform: translateY(-2px);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
 }
 
+/* Bouton Envoyer — doré principal */
 .send-btn {
-  background-color: #007bff;
+  background-color: #E8C602; /* GoldYellow */
 }
 .send-btn:hover {
-  background-color: #0056b3;
+  background-color: #FFE55C; /* ButtonHover */
+  color: #1E1C14; /* TextDark */
+  transform: translateY(-2px);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
 }
 
+/* --------- FICHIERS SÉLECTIONNÉS --------- */
 .selected-files {
   display: flex;
   flex-wrap: wrap;
@@ -46,16 +68,24 @@
 }
 
 .file {
-  background: #f1f1f1;
-  padding: 4px 8px;
-  border-radius: 6px;
+  background: #FFF8CC; /* Doré très clair */
+  padding: 5px 10px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
+  color: #1E1C14;
+  font-size: 13px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .remove {
-  color: red;
+  color: #E63946; /* Rouge doux pour supprimer */
   cursor: pointer;
   font-weight: bold;
+  transition: transform 0.2s ease;
+}
+
+.remove:hover {
+  transform: scale(1.2);
 }
