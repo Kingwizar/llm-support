@@ -24,7 +24,9 @@ class MainActivity : ComponentActivity() {
         val vm = ChatViewModel()
 
         setContent {
-            ChatApp(vm)
+            Npone_llmTheme(darkTheme = true) {  // tu peux mettre false pour tester le clair
+                ChatApp(vm)
+            }
         }
     }
 }

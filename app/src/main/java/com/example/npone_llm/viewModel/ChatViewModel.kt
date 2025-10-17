@@ -8,29 +8,32 @@ import com.example.npone_llm.data.ChatRepository
 import com.example.npone_llm.data.remote.dto.ChatResponseDto
 import com.example.npone_llm.data.remote.dto.ConversationDto
 import kotlinx.coroutines.launch
+import java.io.File
 
 class ChatViewModel : ViewModel() {
     private val repo = ChatRepository()
 
-    // Liste des conversations (historique)
+    // 🔹 Liste des conversations (historique)
     var conversations = mutableStateListOf<ConversationDto>()
         private set
 
-    // Conversation actuellement sélectionnée
+    // 🔹 Conversation sélectionnée
     var currentConversation = mutableStateOf<ConversationDto?>(null)
         private set
 
-    // Réponse en cours
+    // 🔹 Dernière réponse du LLM
     var lastResponse = mutableStateOf<ChatResponseDto?>(null)
         private set
 
-    // États de chargement / erreur
+    // 🔹 États de chargement / erreur
     var isLoading = mutableStateOf(false)
         private set
     var error = mutableStateOf<String?>(null)
         private set
 
-    // --- Charger toutes les conversations depuis le backend
+    // =====================
+    // 🔹 Charger les conversations
+    // =====================
     fun loadConversations() {
         viewModelScope.launch {
             try {
@@ -39,18 +42,9 @@ class ChatViewModel : ViewModel() {
                 conversations.clear()
                 conversations.addAll(convs)
 
-                // 🔥 Actualiser currentConversation si elle existe encore dans la nouvelle liste
-                currentConversation.value?.let { current ->
-                    val updated = convs.find { it.id == current.id }
-                    if (updated != null) {
-                        currentConversation.value = updated
-                    } else if (convs.isNotEmpty()) {
-                        currentConversation.value = convs.first()
-                    } else {
-                        currentConversation.value = null
-                    }
-                } ?: run {
-                    if (convs.isNotEmpty()) currentConversation.value = convs.first()
+                // Si aucune conversation sélectionnée, prendre la première
+                if (currentConversation.value == null && convs.isNotEmpty()) {
+                    currentConversation.value = convs.first()
                 }
             } catch (e: Exception) {
                 error.value = e.message ?: "Erreur lors du chargement"
@@ -60,8 +54,9 @@ class ChatViewModel : ViewModel() {
         }
     }
 
-
-    // --- Créer une nouvelle conversation
+    // =====================
+    // 🔹 Créer une nouvelle conversation
+    // =====================
     fun createConversation(title: String) {
         viewModelScope.launch {
             try {
@@ -69,111 +64,125 @@ class ChatViewModel : ViewModel() {
                 conversations.add(newConv)
                 currentConversation.value = newConv
             } catch (e: Exception) {
-                error.value = e.message ?: "Erreur lors de la création"
+                error.value = e.message ?: "Erreur création conversation"
             }
         }
     }
 
-    // --- Sélectionner une conversation existante
+    // =====================
+    // 🔹 Sélectionner une conversation
+    // =====================
     fun selectConversation(id: String) {
         val conv = conversations.find { it.id == id }
         currentConversation.value = conv
     }
 
-    // --- Envoyer une question (chat avec LLM)
-    fun sendQuestion(question: String) {
+    // =====================
+    // 🔹 Envoyer un message texte
+    // =====================
+    fun sendTextMessage(text: String) {
         viewModelScope.launch {
             try {
+                val convId = ensureConversation()
                 isLoading.value = true
 
-                // 1) Ajouter le message utilisateur dans la conversation
-                val convId = currentConversation.value?.id
-                    ?: run {
-                        val newConv = repo.createConversation("Nouvelle conversation")
-                        conversations.add(newConv)
-                        currentConversation.value = newConv
-                        newConv.id
-                    }
+                repo.sendTextMessage(convId, text)
 
-                val updatedConv = repo.addMessage(convId, question, "user")
-                updateConversationInList(updatedConv)
+                // 🔁 Recharger la conversation depuis la base
+                reloadMessages(convId)
 
-                // 2) Envoyer la question au backend /chat
-                val res = repo.sendQuestion(question)
-                lastResponse.value = res
+                // 🔹 Envoyer la question au LLM
+                val response = repo.sendQuestion(text, convId)
+                lastResponse.value = response
 
-                // 3) Construire un message complet avec summary + steps + citations
-                val botMessage = buildString {
-                    appendLine(res.summary)
-                    appendLine()
-                    res.steps.forEachIndexed { i, step ->
-                        appendLine("${i + 1}. $step")
-                    }
-                    appendLine()
-                    res.citations.forEach { c ->
-                        appendLine("📚 Source: ${c.doc} (score=${c.score})")
-                    }
-                }
 
-                // Ajouter ce message complet à la conversation
-                val updatedWithLLM = repo.addMessage(convId, botMessage, "bot")
-                updateConversationInList(updatedWithLLM)
+                reloadMessages(convId)
 
                 error.value = null
             } catch (e: Exception) {
-                error.value = e.message ?: "Erreur lors de l'envoi"
+                error.value = e.message ?: "Erreur envoi message"
             } finally {
                 isLoading.value = false
             }
         }
     }
 
-    // --- Utilitaire pour garder la liste des conversations à jour
-    private fun updateConversationInList(updated: ConversationDto) {
-        val idx = conversations.indexOfFirst { it.id == updated.id }
-        if (idx >= 0) {
-            conversations[idx] = updated
-        } else {
-            conversations.add(updated)
-        }
-        if (currentConversation.value?.id == updated.id) {
-            currentConversation.value = updated
+    // =====================
+    // 🔹 Envoyer un message avec fichier(s)
+    // =====================
+    fun sendFileMessage(text: String, files: List<File>) {
+        viewModelScope.launch {
+            try {
+                val convId = ensureConversation()
+                isLoading.value = true
+
+                repo.sendFileMessage(convId, text, files)
+                reloadMessages(convId)
+
+                error.value = null
+            } catch (e: Exception) {
+                error.value = e.message ?: "Erreur envoi fichier"
+            } finally {
+                isLoading.value = false
+            }
         }
     }
 
-    // --- Supprimer une conversation ---
+    // =====================
+    // 🔹 Supprimer une conversation
+    // =====================
     fun deleteConversation(id: String) {
         viewModelScope.launch {
             try {
-                // Supprime côté backend
                 repo.deleteConversation(id)
-                // Supprime côté local
                 conversations.removeAll { it.id == id }
                 if (currentConversation.value?.id == id) {
                     currentConversation.value = null
                 }
             } catch (e: Exception) {
-                error.value = e.message ?: "Erreur lors de la suppression"
+                error.value = e.message ?: "Erreur suppression conversation"
             }
         }
     }
 
-    // --- Renommer une conversation ---
+    // =====================
+    // 🔹 Renommer une conversation
+    // =====================
     fun renameConversation(id: String, newTitle: String) {
         viewModelScope.launch {
             try {
                 val updated = repo.renameConversation(id, newTitle)
                 val idx = conversations.indexOfFirst { it.id == id }
-                if (idx >= 0) {
-                    conversations[idx] = updated
-                }
-                if (currentConversation.value?.id == id) {
-                    currentConversation.value = updated
-                }
+                if (idx >= 0) conversations[idx] = updated
+                if (currentConversation.value?.id == id) currentConversation.value = updated
             } catch (e: Exception) {
-                error.value = e.message ?: "Erreur lors du renommage"
+                error.value = e.message ?: "Erreur renommage conversation"
             }
         }
     }
 
+    // =====================
+    // 🔹 Utilitaires internes
+    // =====================
+    private suspend fun ensureConversation(): String {
+        val existing = currentConversation.value
+        if (existing != null) return existing.id
+
+        val newConv = repo.createConversation("Nouvelle conversation")
+        conversations.add(newConv)
+        currentConversation.value = newConv
+        return newConv.id
+    }
+
+    private fun reloadMessages(convId: String) {
+        viewModelScope.launch {
+            try {
+                val msgs = repo.getMessages(convId)
+                val conv = currentConversation.value?.copy(messages = msgs)
+                currentConversation.value = conv
+            } catch (e: Exception) {
+                error.value = e.message
+            }
+        }
+    }
 }
