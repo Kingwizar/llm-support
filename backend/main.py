@@ -9,7 +9,7 @@ from io import BytesIO
 from datetime import datetime
 from dotenv import load_dotenv
 from fastapi.responses import StreamingResponse
-from llm.rag_core import rag_prepare
+from llm.rag_core import answer_with_rag_or_web, rag_prepare, query_ollama
 from llm.prompt_builder import build_prompt_from_extracted_file
 from ingest.file_ingest import extract_text_from_file
 from ingest.web_search import simple_web_search
@@ -222,7 +222,7 @@ async def send_message(
             try:
                 extracted = extract_text_from_file(tmp_path)
                 file_prompt = build_prompt_from_extracted_file(extracted)
-                rag_data = rag_prepare(file_prompt) or {}
+                rag_data = answer_with_rag_or_web(file_prompt) or {}
             except Exception as e:
                 rag_data = {}
                 logger.warning(f"⚠️ Extraction RAG échouée pour {file.filename}: {e}")
@@ -279,14 +279,13 @@ async def chat(req: ChatRequest):
     """
     try:
         logger.info(f"💬 Requête RAG : {req.question}")
-        pack = rag_prepare(req.question) or {}
+        pack = answer_with_rag_or_web(req.question) or {}
+        prompt = pack.get("prompt", "")
 
-        fake_summary = f"Réponse simulée pour : '{req.question}'"
-        fake_steps = [
-            "Étape 1 : Analyse de la question",
-            "Étape 2 : Recherche dans la base de connaissances",
-            "Étape 3 : Synthèse de la réponse"
-        ]
+        ollama_answer = query_ollama(prompt, model_name="mistral")
+        # 3️⃣ Construire une réponse structurée
+        summary = ollama_answer.split("\n")[0][:300] if ollama_answer else "Aucune réponse."
+        steps = [line.strip() for line in ollama_answer.split("\n") if line.strip()]
         # normalise les citations pour respecter le modèle Pydantic
         citations = [
             {
@@ -297,26 +296,22 @@ async def chat(req: ChatRequest):
             for c in pack.get("citations", [])
         ]
 
-        bot_text = "\n".join(fake_steps)
-        if citations:
-            srcs = ", ".join([c["doc"] for c in citations if c.get("doc")])
-            if srcs:
-                bot_text += f"\n📚 Sources: {srcs}"
+        
 
         if req.conv_id:
             await conversations.update_one(
                 {"_id": ObjectId(req.conv_id)},
                 {"$push": {"messages": {
                     "role": "bot",
-                    "content": bot_text,
+                    "content": ollama_answer,
                     "isUser": False,
                     "uploaded_at": datetime.utcnow()
                 }}}
             )
 
         return ChatResponse(
-            summary=fake_summary,
-            steps=fake_steps,
+            summary=summary,
+            steps=steps,
             citations=citations,
             conversation_id=req.conv_id or "no-conv-id"
         )
