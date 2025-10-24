@@ -62,33 +62,49 @@ def rag_prepare(question: str, top_k: int = TOP_K_DEFAULT) -> Dict[str, Any]:
 
 # ==================== RAG + WEB ====================
 
-from llm.web_search import simple_web_search
-from llm.prompt_builder import build_runtime_prompt
 
 def answer_with_rag_or_web(question: str, top_k: int = TOP_K_DEFAULT) -> Dict[str, Any]:
     """
-    Si la question est peu liée au RAG (sim < seuil), on ignore l'index et on lance une recherche web.
-    Sinon, on fait RAG + web si besoin.
+    Version améliorée : effectue systématiquement une recherche web
+    et combine les résultats web avec ceux du RAG (si pertinents).
     """
-    model, index, recs = load_index()
-    q_emb = model.encode([question], normalize_embeddings=True).astype("float32")
-    D, I = index.search(q_emb, top_k)
-    max_sim = float(np.max(D))
 
-    SIM_THRESHOLD = 0.35  # Ajustable : plus haut = plus strict
+    # 🧩 Étape 1 — Recherche web systématique
+    web_results = simple_web_search(question, num_results=3, full_content=True)
+    web_block = "\n".join(
+    f"[WEB] {r.get('title', '')}\nURL: {r.get('url', '')}\n{r.get('content', r.get('snippet', ''))[:2000]}"
+    for r in web_results if not r.get("error")
+    )
 
-    # 🟡 Cas 1 : Question hors domaine → uniquement web search
+    web_citations = [{"doc": r.get("url", ""), "score": 0.3} for r in web_results if not r.get("error")]
+
+    # 🧠 Étape 2 — Vérifie si l'index local est pertinent
+    try:
+        model, index, recs = load_index()
+        q_emb = model.encode([question], normalize_embeddings=True).astype("float32")
+        D, I = index.search(q_emb, top_k)
+        max_sim = float(np.max(D))
+    except Exception as e:
+        print(f"[WARN] Impossible de charger l'index FAISS : {e}")
+        return {
+            "prompt": build_runtime_prompt(question, web_citations, web_block),
+            "citations": web_citations,
+            "sources_block": web_block,
+            "question": question,
+            "from_rag": False,
+            "from_web": True,
+            "similarity": None,
+        }
+
+    SIM_THRESHOLD = 0.35
+
+    # ⚙️ Étape 3 — Si l'index n’est pas pertinent, ne garder que le web
     if max_sim < SIM_THRESHOLD:
-        print(f"[INFO] Similarité faible ({max_sim:.2f}) → RAG ignoré, utilisation du Web")
-        web_results = simple_web_search(question)
-        web_block = "\n".join(
-            f"[WEB] {r.get('title', '')} — {r.get('snippet', '')}" for r in web_results if not r.get("error")
-        )
-        citations = [{"doc": r.get("url", ""), "score": 0.3} for r in web_results if not r.get("error")]
-        prompt = build_runtime_prompt(question, citations, web_block)
+        print(f"[INFO] Similarité faible ({max_sim:.2f}) → réponse uniquement web")
+        prompt = build_runtime_prompt(question, web_citations, web_block)
         return {
             "prompt": prompt,
-            "citations": citations,
+            "citations": web_citations,
             "sources_block": web_block,
             "question": question,
             "from_rag": False,
@@ -96,57 +112,68 @@ def answer_with_rag_or_web(question: str, top_k: int = TOP_K_DEFAULT) -> Dict[st
             "similarity": max_sim,
         }
 
-    # 🟢 Cas 2 : Pertinent → RAG + éventuellement Web
+    # 🧱 Étape 4 — Sinon, on combine RAG + Web
     pack = rag_prepare(question, top_k)
     hits = pack.get("citations", [])
     sources_block = pack.get("sources_block", "")
 
-    # Compléter si peu de résultats
-    if len(hits) < 2:
-        web_results = simple_web_search(question)
-        web_block = "\n".join(
-            f"[WEB] {r.get('title', '')} — {r.get('snippet', '')}" for r in web_results if not r.get("error")
-        )
-        sources_block += "\n" + web_block
-        hits.extend(
-            [{"doc": r.get("url", ""), "score": 0.3} for r in web_results if not r.get("error")]
-        )
+    # fusion propre
+    combined_sources = sources_block + "\n\n# WEB SEARCH RESULTS\n" + web_block
+    combined_citations = hits + web_citations
 
-    prompt = build_runtime_prompt(question, hits, sources_block)
+    prompt = build_runtime_prompt(question, combined_citations, combined_sources)
     return {
         "prompt": prompt,
-        "citations": hits,
-        "sources_block": sources_block,
+        "citations": combined_citations,
+        "sources_block": combined_sources,
         "question": question,
         "from_rag": True,
-        "from_web": len(hits) < 2,
+        "from_web": True,
         "similarity": max_sim,
     }
 
 
 
 
-def query_ollama(prompt: str, model_name: str = "mistral") -> str:
-    """
-    Envoie un prompt à Ollama (modèle local comme mistral) et renvoie la réponse textuelle.
-    """
-    url = "http://localhost:11434/api/generate"
+
+def query_ollama(prompt: str, model_name: str = "mistral-small:24b") -> str:
+    url = "http://127.0.0.1:11434/api/chat"  # ✅ force IPv4
     payload = {
         "model": model_name,
-        "prompt": prompt,
+        "messages": [
+            {"role": "system", "content": "Tu es un assistant utile et précis."},
+            {"role": "user", "content": prompt}
+        ],
         "stream": False
     }
 
+    headers = {"Content-Type": "application/json"}
+
+    print("\n=== DEBUG OLLAMA REQUEST ===")
+    print(f"→ URL     : {url}")
+    print(f"→ Model   : {model_name}")
+    print(f"→ Headers : {headers}")
+    print("→ Payload :")
+    print(json.dumps(payload, indent=2))
+    print("============================\n")
+
     try:
-        response = requests.post(url, json=payload, timeout=60)
+        response = requests.post(url, headers=headers, json=payload, timeout=120)
+        print(f"[DEBUG] HTTP {response.status_code} from {url}")
+        if not response.ok:
+            print(f"[DEBUG] Response text: {response.text}")
         response.raise_for_status()
         data = response.json()
-        
-
-        return data.get("response", "").strip()
-        
+        content = data.get("message", {}).get("content", "").strip()
+        print(f"[DEBUG] Response OK — length={len(content)} chars")
+        return content
     except Exception as e:
+        print(f"[ERROR contacting Ollama] {e}")
         return f"[Error contacting Ollama] {e}"
+
+
+
+
 
 def test_rag_with_ollama(question: str):
     pack = answer_with_rag_or_web(question)
@@ -155,6 +182,6 @@ def test_rag_with_ollama(question: str):
     print("\n=== PROMPT ===")
     print(pack["prompt"][:1000], "...")
     print("\n=== OLLAMA RESPONSE ===")
-    answer = query_ollama(pack["prompt"], "mistral")
+    answer = query_ollama(pack["prompt"], "mistral-small:24b")
     print(answer)
 

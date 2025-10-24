@@ -282,7 +282,7 @@ async def chat(req: ChatRequest):
         pack = answer_with_rag_or_web(req.question) or {}
         prompt = pack.get("prompt", "")
 
-        ollama_answer = query_ollama(prompt, model_name="mistral")
+        ollama_answer = query_ollama(prompt, model_name="mistral-small:24b")
         # 3️⃣ Construire une réponse structurée
         summary = ollama_answer.split("\n")[0][:300] if ollama_answer else "Aucune réponse."
         steps = [line.strip() for line in ollama_answer.split("\n") if line.strip()]
