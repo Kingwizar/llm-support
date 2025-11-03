@@ -9,10 +9,31 @@ from io import BytesIO
 from datetime import datetime
 from dotenv import load_dotenv
 from fastapi.responses import StreamingResponse
-from llm.rag_core import answer_with_rag_or_web, rag_prepare, query_ollama
+from llm.rag_core import answer_with_rag_or_web, rag_prepare, query_ollama, query_ollama_voice_agent
 from llm.prompt_builder import build_prompt_from_extracted_file
 from ingest.file_ingest import extract_text_from_file
 from ingest.web_search import simple_web_search
+import soundfile as sf
+import sounddevice as sd
+from faster_whisper import WhisperModel
+from kokoro import KPipeline
+import llm.agent
+from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+import os, time
+import soundfile as sf
+
+# Importe tes modules STT / LLM / TTS
+from whisper import WhisperModel
+from llm.rag_core import query_ollama_voice_agent
+from kokoro import KPipeline
+
+import shutil
+from fastapi.staticfiles import StaticFiles
+
+
+
 
 # ======================================================
 # ----------------- CONFIGURATION ----------------------
@@ -34,6 +55,9 @@ CORS_ORIGINS = os.getenv("CORS_ORIGINS", "").split(",")
 
 app = FastAPI(title="LLM Chat API")
 logger = logging.getLogger("uvicorn.error")
+
+os.makedirs("static/audio", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.add_middleware(
     CORSMiddleware,
@@ -382,3 +406,123 @@ async def log_requests(request: Request, call_next):
     except Exception as e:
         logger.error(f"❌ [{idem}] Exception: {str(e)}", exc_info=True)
         raise
+
+
+# ======================================================
+# ----------------- ROUTE VOICE AGENT ------------------
+# ======================================================
+
+@app.post("/voice-agent")
+async def voice_agent(audio: UploadFile = File(...)):
+    """
+    Reçoit un fichier audio, le transcrit (STT), envoie le texte au LLM
+    avec un prompt vocal spécial, puis renvoie le texte + un lien audio TTS.
+    """
+    try:
+        # 1️⃣ Sauvegarder temporairement le fichier reçu
+        input_path = f"/tmp/{audio.filename}"
+        with open(input_path, "wb") as f:
+            f.write(await audio.read())
+
+        # 2️⃣ Transcription audio → texte
+        model = WhisperModel("base", device="cpu", compute_type="int8")
+        segments, _ = model.transcribe(input_path)
+        text = " ".join([s.text for s in segments]).strip()
+        print(f"🧠 Texte reconnu : {text}")
+
+        # 3️⃣ Génération de la réponse via LLM
+        from llm.rag_core import query_ollama_voice_agent
+        response_text = query_ollama_voice_agent(text)
+
+        # 4️⃣ Synthèse vocale (Kokoro)
+        pipeline = KPipeline(lang_code='a')
+        generator = pipeline(response_text, voice='af_sarah')
+
+        timestamp = int(time.time())
+        output_path = f"static/audio/reponse_{timestamp}.wav"
+
+        for _, _, audio_out in generator:
+            sf.write(output_path, audio_out, 24000)
+
+        print(f"✅ Fichier TTS généré : {output_path}")
+
+        # 5️⃣ Retourner un JSON avec lien direct
+        audio_url = f"http://127.0.0.1:{APP_PORT}/{output_path}"
+
+        return {
+            "recognized_text": text,
+            "response_text": response_text,
+            "audio_url": audio_url
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Erreur /voice-agent : {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Configuration
+UPLOAD_DIR = "uploads"
+RESPONSE_DIR = "static/audio"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(RESPONSE_DIR, exist_ok=True)
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.post("/upload-audio")
+async def upload_audio(audio: UploadFile = File(...)):
+    try:
+        # 1️⃣ sauvegarde du fichier reçu
+        timestamp = int(time.time())
+        filename = f"{timestamp}_{audio.filename}"
+        file_path = os.path.join(UPLOAD_DIR, filename)
+        with open(file_path, "wb") as f:
+            f.write(await audio.read())
+        print(f"✅ Fichier reçu : {file_path}")
+
+        # 2️⃣ Transcription STT
+        stt_model = WhisperModel("base", device="cpu", compute_type="int8")
+        segments, _ = stt_model.transcribe(file_path)
+        recognized_text = " ".join([s.text for s in segments]).strip()
+        print(f"🧠 Texte reconnu : {recognized_text}")
+
+        # 3️⃣ Génération réponse LLM
+        response_text = query_ollama_voice_agent(recognized_text)
+        print(f"🤖 Réponse LLM : {response_text}")
+
+        # 4️⃣ Synthèse vocale TTS
+        pipeline = KPipeline(lang_code='a')
+        generator = pipeline(response_text, voice='af_sarah')
+        output_filename = f"response_{timestamp}.wav"
+        output_path = os.path.join(RESPONSE_DIR, output_filename)
+        # Supposons : le pipeline renvoie des chunks audio
+        with sf.SoundFile(output_path, mode='w', samplerate=24000, channels=1) as wfile:
+            for _, _, audio_chunk in generator:
+                wfile.write(audio_chunk)
+        print(f"✅ Fichier TTS généré : {output_path}")
+
+        # 5️⃣ Retourner JSON avec le chemin du fichier et textes
+        audio_url = f"http://127.0.0.1:8000/static/audio/{output_filename}"
+        return JSONResponse(content={
+            "status": "success",
+            "recognized_text": recognized_text,
+            "response_text": response_text,
+            "audio_url": audio_url
+        })
+
+    except Exception as e:
+        print(f"❌ Erreur /upload-audio : {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Route de réponse audio (GET)
+@app.get("/response-audio")
+async def response_audio(filename: str):
+    try:
+        file_path = os.path.join(RESPONSE_DIR, filename)
+        if os.path.exists(file_path):
+            print(f"🎧 Téléchargement du fichier : {file_path}")
+            return FileResponse(file_path, media_type="audio/wav", filename=filename)
+        else:
+            return JSONResponse(content={"status": "error", "message": "Fichier introuvable"}, status_code=404)
+    except Exception as e:
+        print(f"❌ Erreur /response-audio : {e}")
+        raise HTTPException(status_code=500, detail=str(e))

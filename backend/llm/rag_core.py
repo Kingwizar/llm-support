@@ -185,3 +185,31 @@ def test_rag_with_ollama(question: str):
     answer = query_ollama(pack["prompt"], "mistral-small:24b")
     print(answer)
 
+#--------------------------------Voice agent version ------------------------------------
+
+def query_ollama_voice_agent(prompt: str, model_name: str = "mistral-small:24b") -> str:
+    """
+    Version spéciale du LLM pour un agent vocal : réponses brèves et naturelles.
+    """
+    url = "http://127.0.0.1:11434/api/chat"
+    payload = {
+        "model": model_name,
+        "messages": [
+            {"role": "system", "content": (
+                "You are a voice-based AI assistant in an interactive application. "
+                "Always respond in natural, expressive, and short English sentences. "
+                "Avoid lists, quotes, or technical details."
+            )},
+            {"role": "user", "content": prompt}
+        ],
+        "stream": False
+    }
+
+    headers = {"Content-Type": "application/json"}
+    try:
+        r = requests.post(url, headers=headers, json=payload, timeout=60)
+        r.raise_for_status()
+        return r.json().get("message", {}).get("content", "").strip()
+    except Exception as e:
+        return f"[Erreur LLM] {e}"
+
