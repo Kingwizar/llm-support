@@ -4,6 +4,8 @@ from typing import List, Dict, Any
 from sentence_transformers import SentenceTransformer
 from llm.prompt_builder import build_runtime_prompt
 from llm.web_search import simple_web_search
+from llm.ai_chat.voice_agent_prompt import build_voice_agent_prompt
+
 import requests
 # ==================== CONSTANTS ====================
 
@@ -187,29 +189,35 @@ def test_rag_with_ollama(question: str):
 
 #--------------------------------Voice agent version ------------------------------------
 
-def query_ollama_voice_agent(prompt: str, model_name: str = "mistral-small:24b") -> str:
+# ===========================
+# 🎤 AGENT VOCAL 3D UNREAL
+# ===========================
+
+def query_ollama_voice_agent(user_text: str, model_name: str = "mistral-small:24b") -> str:
     """
-    Version spéciale du LLM pour un agent vocal : réponses brèves et naturelles.
+    Agent vocal pour personnage 3D Unreal.
+    Utilise un prompt optimisé pour TTS + animation faciale.
     """
     url = "http://127.0.0.1:11434/api/chat"
+
+    # 🔥 prompt optimisé pour la voix + animation MetaHuman
+    prompt = build_voice_agent_prompt(user_text)
+
     payload = {
         "model": model_name,
         "messages": [
-            {"role": "system", "content": (
-                "You are a voice-based AI assistant in an interactive application. "
-                "Always respond in natural, expressive, and short English sentences. "
-                "Avoid lists, quotes, or technical details."
-            )},
-            {"role": "user", "content": prompt}
+            {"role": "system", "content": prompt}
         ],
         "stream": False
     }
 
     headers = {"Content-Type": "application/json"}
+
     try:
         r = requests.post(url, headers=headers, json=payload, timeout=60)
         r.raise_for_status()
         return r.json().get("message", {}).get("content", "").strip()
+
     except Exception as e:
-        return f"[Erreur LLM] {e}"
+        return f"[Erreur LLM Voice Agent] {e}"
 
