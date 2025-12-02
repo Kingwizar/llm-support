@@ -31,6 +31,37 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.TextFieldColors
+import androidx.core.net.toUri
+
+import android.content.ContentValues
+
+import android.provider.MediaStore
+import android.util.Log
+import android.widget.Toast
+
+
+
+import android.os.Build
+import androidx.compose.ui.text.TextStyle
+
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+import java.net.HttpURLConnection
+import java.net.URL
+
+
+
+
+import java.io.OutputStream
+
+// 🎨 Palette personnalisée pour ton champ de texte
+
+
 
 // === MIME utilitaire ===
 fun File.getMimeType(): String {
@@ -95,11 +126,11 @@ fun ChatApp(vm: ChatViewModel) {
 }
 
 @Composable
-fun ChatBubble(msg: MessageDto, onDownload: (String) -> Unit) {
+fun ChatBubble(msg: MessageDto, onDownload: (String, String) -> Unit) {
     val isBot = msg.role == "bot"
     val alignment = if (isBot) Alignment.CenterStart else Alignment.CenterEnd
     val bubbleColor = if (isBot) Color(0xFFE8C602) else Color(0xFF47473A)
-    val textColor = if (isBot) Color.White else Color.White
+    val textColor = Color.White
 
     Box(
         modifier = Modifier
@@ -113,7 +144,6 @@ fun ChatBubble(msg: MessageDto, onDownload: (String) -> Unit) {
                 .padding(12.dp)
                 .widthIn(max = 280.dp)
         ) {
-            // 🗣️ Texte principal
             if (!msg.content.isNullOrBlank()) {
                 Text(
                     text = msg.content ?: "",
@@ -122,7 +152,7 @@ fun ChatBubble(msg: MessageDto, onDownload: (String) -> Unit) {
                 )
             }
 
-            // 📎 Fichiers joints
+            // 🟡 Corrigé : on utilise le bon file_name avec le bon file_url
             msg.files?.forEach { file ->
                 Spacer(Modifier.height(8.dp))
                 Surface(
@@ -134,7 +164,12 @@ fun ChatBubble(msg: MessageDto, onDownload: (String) -> Unit) {
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onDownload(file.file_url) }
+                            .clickable {
+                                onDownload(
+                                    file.file_url,
+                                    file.file_name ?: "fichier.bin"
+                                )
+                            }
                             .padding(horizontal = 8.dp, vertical = 6.dp)
                     ) {
                         Icon(Icons.Default.AttachFile, contentDescription = null, tint = textColor)
@@ -146,10 +181,15 @@ fun ChatBubble(msg: MessageDto, onDownload: (String) -> Unit) {
                         )
                         Spacer(Modifier.weight(1f))
                         Button(
-                            onClick = { onDownload(file.file_url) },
+                            onClick = {
+                                onDownload(
+                                    file.file_url,
+                                    file.file_name ?: "fichier.bin"
+                                )
+                            },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = if (isBot) Color.White.copy(alpha = 0.25f) else Color(0xFFE8C602),
-                                contentColor = if (isBot) Color.White else Color.White
+                                contentColor = Color.White
                             ),
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                         ) {
@@ -186,10 +226,6 @@ fun ChatScreen(vm: ChatViewModel, modifier: Modifier = Modifier) {
         }
     }
 
-    LaunchedEffect(isLoading) {
-        if (!isLoading) isRefreshing = false
-    }
-
     PullToRefreshBox(
         state = refreshState,
         isRefreshing = isRefreshing,
@@ -214,15 +250,15 @@ fun ChatScreen(vm: ChatViewModel, modifier: Modifier = Modifier) {
             ) {
                 conv?.messages?.let { msgs ->
                     items(msgs) { msg ->
-                        ChatBubble(msg) { url ->
-                            val fileName = msg.files?.firstOrNull()?.file_name ?: "fichier.bin"
-                            downloadFile(context, url, fileName)
+                        ChatBubble(msg) { fileUrl, fileName ->
+                            Log.e("DOWNLOAD", "Téléchargement : $fileUrl ($fileName)")
+                            downloadFile(context, fileUrl, fileName)
                         }
                     }
                 }
             }
 
-
+            // (reste identique)
             if (selectedFiles.isNotEmpty()) {
                 Column(
                     Modifier
@@ -247,6 +283,7 @@ fun ChatScreen(vm: ChatViewModel, modifier: Modifier = Modifier) {
                     modifier = Modifier.weight(1f),
                     label = { Text("Écris ton message...") }
                 )
+
                 Spacer(Modifier.width(8.dp))
                 IconButton(onClick = { filePicker.launch(arrayOf("*/*")) }) {
                     Icon(Icons.Default.AttachFile, contentDescription = "Ajouter un fichier")
@@ -270,6 +307,7 @@ fun ChatScreen(vm: ChatViewModel, modifier: Modifier = Modifier) {
         }
     }
 }
+
 
 // === Bulle de message ===
 @Composable
@@ -406,7 +444,14 @@ fun DrawerContent(
                     value = newTitle,
                     onValueChange = { newTitle = it },
                     label = { Text("Nouvelle conversation") },
-                    modifier = Modifier.fillMaxWidth()
+                    placeholder = { Text("Entrer un titre") },
+                    textStyle = TextStyle(color = Color.Black),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedBorderColor = Color.Black,
+                        focusedBorderColor = Color.Black,
+                        cursorColor = Color.Black
+                    )
                 )
                 Button(
                     onClick = {
@@ -475,13 +520,79 @@ fun getFileExtension(context: Context, uri: Uri): String? {
 }
 
 fun downloadFile(context: Context, url: String, fileName: String) {
-    val request = DownloadManager.Request(Uri.parse(url))
-        .setTitle(fileName)
-        .setDescription("Téléchargement en cours…")
-        .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-        .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
-        .setAllowedOverMetered(true)
 
-    val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-    manager.enqueue(request)
+    // Toujours sur un thread IO
+    CoroutineScope(Dispatchers.IO).launch {
+
+        Log.e("DOWNLOAD", "➡ Téléchargement : $url ($fileName)")
+
+        try {
+            val mime = getMimeTypeFromUrl(url)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // API 29+
+                val resolver = context.contentResolver
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                    put(MediaStore.Downloads.MIME_TYPE, mime)
+                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                }
+
+                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                    ?: throw Exception("Insertion impossible")
+
+                val connection = URL(url).openConnection() as HttpURLConnection
+                connection.connectTimeout = 5000
+                connection.readTimeout = 5000
+                connection.requestMethod = "GET"
+                connection.connect()
+
+                if (connection.responseCode != 200)
+                    throw Exception("HTTP ${connection.responseCode}")
+
+                resolver.openOutputStream(uri).use { output ->
+                    connection.inputStream.use { input ->
+                        input.copyTo(output!!)
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "📁 Téléchargé : $fileName", Toast.LENGTH_LONG).show()
+                }
+
+            } else {
+                // API < 29 → DownloadManager
+                val request = DownloadManager.Request(Uri.parse(url))
+                    .setTitle(fileName)
+                    .setMimeType(mime)
+                    .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    .setDestinationInExternalPublicDir(
+                        Environment.DIRECTORY_DOWNLOADS,
+                        fileName
+                    )
+
+                val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                dm.enqueue(request)
+
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "📥 Téléchargement lancé", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+        } catch (e: Exception) {
+            Log.e("DOWNLOAD_ERROR", "Exception complète :", e)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(context, "❌ Téléchargement échoué: ${e.javaClass.simpleName}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+}
+
+
+
+fun getMimeTypeFromUrl(url: String): String {
+    val extension = MimeTypeMap.getFileExtensionFromUrl(url)
+    return MimeTypeMap.getSingleton()
+        .getMimeTypeFromExtension(extension.lowercase())
+        ?: "application/octet-stream"
 }

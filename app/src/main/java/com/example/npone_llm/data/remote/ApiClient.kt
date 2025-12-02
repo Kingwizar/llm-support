@@ -12,7 +12,7 @@ import com.example.npone_llm.BuildConfig
 
 object ApiClient {
     // ⚠️ Pour l'émulateur Android
-    private val BASE_URL = BuildConfig.API_BASE_URL
+    private val BASE_URL = "http://192.168.213.110:8000/"
     //private const val BASE_URL = "http://10.100.99.107:8000/"
 
     private val logging = HttpLoggingInterceptor().apply {
