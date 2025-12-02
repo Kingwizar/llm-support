@@ -129,7 +129,7 @@ def make_file_url(file_id: str) -> str:
         # p.ex. http://127.0.0.1:3000/api/chat/file/<id>
         return f"{PUBLIC_BASE_URL.rstrip('/')}/file/{file_id}"
     # sinon, lien direct FastAPI
-    return f"http://127.0.0.1:{APP_PORT}/file/{file_id}"
+    return f"http://192.168.213.110:{APP_PORT}/file/{file_id}"
 
 # ======================================================
 # ----------------- ROUTES CONVERSATIONS ---------------
@@ -357,8 +357,12 @@ async def get_file(file_id: str):
         return StreamingResponse(
             stream,
             media_type=meta.get("content_type", "application/octet-stream"),
-            headers={"Content-Disposition": f"attachment; filename={meta['filename']}"}
+            headers={
+                "Content-Disposition": f"attachment; filename={meta['filename']}",
+                "Access-Control-Expose-Headers": "Content-Disposition"
+            }
         )
+
 
     except Exception as e:
         logger.error(f"❌ [FastAPI] Erreur téléchargement : {e}", exc_info=True)

@@ -1,41 +1,14 @@
 # llm/web_search.py
-import os, requests
+import os
+import requests
 from bs4 import BeautifulSoup
-from dotenv import load_dotenv
-load_dotenv()
-# === Configuration Google API ===
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY_env")
-GOOGLE_CX = os.getenv("GOOGLE_CX_env")
-
-def google_search(query: str, num_results: int = 3):
-    """Recherche via Google Custom Search API."""
-    if not GOOGLE_API_KEY or not GOOGLE_CX:
-        return [{"error": "Clé API Google manquante. Configure GOOGLE_API_KEY et GOOGLE_CX."}]
-
-    url = "https://www.googleapis.com/customsearch/v1"
-    params = {
-        "key": GOOGLE_API_KEY,
-        "cx": GOOGLE_CX,
-        "q": query,
-        "num": num_results,
-        "hl": "fr"
-    }
-    try:
-        resp = requests.get(url, params=params, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-        results = []
-        for item in data.get("items", []):
-            results.append({
-                "title": item.get("title"),
-                "url": item.get("link"),
-                "snippet": item.get("snippet", "")
-            })
-        return results
-    except Exception as e:
-        return [{"error": str(e)}]
+from ddgs import DDGS   # 🔥 nouvelle API DuckDuckGo
+from datetime import datetime
 
 
+# ================================
+# 🔍 Extraction HTML complète
+# ================================
 def extract_full_text_from_url(url: str, max_chars: int = 3000) -> str:
     """Télécharge et extrait le texte lisible d'une page web."""
     try:
@@ -45,41 +18,123 @@ def extract_full_text_from_url(url: str, max_chars: int = 3000) -> str:
 
         soup = BeautifulSoup(resp.text, "html.parser")
 
-        # Supprime les scripts, styles, etc.
+        # Nettoyage
         for tag in soup(["script", "style", "noscript", "footer", "header", "nav"]):
             tag.extract()
 
         text = " ".join(soup.stripped_strings)
-        text = text.replace("\n", " ").strip()
-
-        # Tronque pour éviter un prompt trop long
         return text[:max_chars]
+
     except Exception as e:
         return f"[Erreur d'extraction: {e}]"
 
 
-def simple_web_search(query: str, num_results: int = 3, full_content: bool = True):
-    """
-    Recherche sur Internet via Google Custom Search + extraction complète du texte.
-    Retourne les résultats avec le contenu complet de chaque site.
-    """
-    print(f"[INFO] Recherche Google pour: {query}")
-    results = google_search(query, num_results=num_results)
-    enriched = []
+# ================================
+# 🦆 Recherche DuckDuckGo (texte)
+# ================================
+def duckduckgo_text_search(query: str, num_results: int = 5):
+    """Recherche textuelle DuckDuckGo."""
+    try:
+        with DDGS() as ddg:
+            results = list(ddg.text(query, max_results=num_results))
+            return results
+    except Exception as e:
+        return [{"error": f"DuckDuckGo TEXT error: {e}"}]
 
-    for r in results:
-        if "error" in r:
-            enriched.append(r)
-            continue
-        url = r.get("url")
-        snippet = r.get("snippet", "")
-        content = ""
-        if full_content and url:
-            content = extract_full_text_from_url(url)
-        enriched.append({
-            "title": r.get("title"),
-            "url": url,
-            "snippet": snippet,
-            "content": content
-        })
-    return enriched
+
+# ================================
+# 📰 Recherche DuckDuckGo News
+# ================================
+def duckduckgo_news_search(query: str, num_results: int = 5):
+    """Recherche actualités DuckDuckGo."""
+    try:
+        with DDGS() as ddg:
+            results = list(ddg.news(query, max_results=num_results))
+            return results
+    except Exception as e:
+        return [{"error": f"DuckDuckGo NEWS error: {e}"}]
+
+
+# ================================
+# 🔎 Fallback "search" général
+# ================================
+def duckduckgo_general_search(query: str, num_results: int = 5):
+    """Fallback general search DuckDuckGo."""
+    try:
+        with DDGS() as ddg:
+            results = list(ddg.search(query, max_results=num_results))
+            return results
+    except Exception as e:
+        return [{"error": f"DuckDuckGo SEARCH error: {e}"}]
+
+
+# ================================
+# 🌐 Fonction principale
+# ================================
+def simple_web_search(query: str, num_results: int = 5, full_content: bool = True):
+    """
+    Recherche Internet via DuckDuckGo :
+    - TEXT
+    - NEWS
+    - SEARCH fallback
+    + extraction HTML optionnelle
+    + sauvegarde debug dans /tmp
+    """
+
+    print(f"[INFO] Recherche DuckDuckGo pour : {query}")
+
+    results = {
+        "TEXT": duckduckgo_text_search(query, num_results),
+        "NEWS": duckduckgo_news_search(query, num_results),
+        "SEARCH": duckduckgo_general_search(query, num_results),
+    }
+
+    enriched_results = []
+
+    for category, items in results.items():
+        for item in items:
+            if "error" in item:
+                enriched_results.append({
+                    "category": category,
+                    "title": None,
+                    "url": None,
+                    "snippet": item["error"],
+                    "content": ""
+                })
+                continue
+
+            title = item.get("title") or item.get("article_title") or ""
+            url   = item.get("href") or item.get("url") or ""
+            body  = item.get("body") or item.get("excerpt") or ""
+
+            content = extract_full_text_from_url(url) if (full_content and url) else ""
+
+            enriched_results.append({
+                "category": category,
+                "title": title,
+                "url": url,
+                "snippet": body,
+                "content": content
+            })
+
+    # ====== Génération d’un fichier debug ======
+    tmp_dir = "C:\\tmp" if os.name == "nt" else "/tmp"
+    os.makedirs(tmp_dir, exist_ok=True)
+
+    debug_path = os.path.join(tmp_dir, "websearch_debug.txt")
+
+    with open(debug_path, "w", encoding="utf-8") as f:
+        f.write(f"=== DEBUG WEBSEARCH ({datetime.now().isoformat()}) ===\n")
+        f.write(f"Query: {query}\n\n")
+
+        for r in enriched_results:
+            f.write(f"--- {r['category']} ---\n")
+            f.write(f"Title: {r['title']}\n")
+            f.write(f"URL: {r['url']}\n")
+            f.write(f"Snippet: {r['snippet']}\n\n")
+            f.write(f"CONTENT:\n{r['content'][:1000]}\n")
+            f.write("\n-----------------------\n")
+
+    print(f"[DEBUG] Fichier généré : {debug_path}")
+
+    return enriched_results

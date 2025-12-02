@@ -1,4 +1,5 @@
 from PIL import Image
+from docx import Document
 import pytesseract
 # WORD Extractor (extractors/word_extractor.py)
 def extract_word_text(path):
