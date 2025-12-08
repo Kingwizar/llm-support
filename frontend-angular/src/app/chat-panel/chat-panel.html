@@ -5,7 +5,11 @@
     <div *ngFor="let msg of messages" [ngClass]="msg.role">
       <div class="bubble">
         <!-- 💬 Texte -->
-        <div class="text" *ngIf="msg.content">{{ msg.content }}</div>
+         <div
+          class="text markdown"
+          *ngIf="msg.content"
+          [innerHTML]="renderMarkdown(msg.content)">
+        </div>
 
         <!-- 📎 Liste des fichiers liés -->
         <div *ngIf="msg.files?.length" class="file-list">

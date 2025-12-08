@@ -1,0 +1,130 @@
+N+One Datacenter est une entreprise marocaine spécialisée dans l’hébergement informatique, les services cloud et les infrastructures numériques critiques. Elle a été fondée au début des années 2010 dans le but de créer une industrie locale du datacenter répondant aux standards internationaux. L’entreprise est née d’un besoin croissant de souveraineté numérique au Maroc et en Afrique, dans un contexte où la majorité des données étaient hébergées à l’étranger.
+
+Origine :
+N+One a été créée pour fournir des infrastructures numériques souveraines, résilientes et hautement disponibles. L’objectif initial était d’offrir aux entreprises marocaines des solutions d’hébergement local fiables, puis de développer une plateforme cloud souveraine.
+
+Localisation :
+Le siège et le premier datacenter de N+One sont situés à Casablanca. L’entreprise développe également des projets de datacenters régionaux dans plusieurs villes du Maroc, comme Settat, Rabat/Témara et Tanger. N+One ambitionne également d’étendre sa présence en Afrique, notamment au Sénégal, en Côte d’Ivoire, au Ghana et au Rwanda.
+
+Mission :
+La mission de N+One est de concevoir, exploiter et industrialiser des infrastructures numériques souveraines et durables, afin d'accompagner la transformation digitale du Maroc et de l’Afrique.
+
+Vision :
+N+One souhaite construire une industrie africaine du datacenter capable de rivaliser avec les standards internationaux, tout en réduisant la dépendance technologique du continent.
+
+Valeurs :
+
+Souveraineté numérique
+
+Fiabilité et haute disponibilité
+
+Innovation technologique
+
+Sécurité et conformité
+
+Proximité client
+
+Durabilité énergétique
+
+Positionnement :
+N+One est un opérateur de datacenter indépendant, carrier-neutral, offrant des solutions sur mesure adaptées aux grandes entreprises, PME, organisations publiques et partenaires internationaux. L’entreprise se positionne comme un leader marocain et un acteur émergent du cloud souverain en Afrique.
+
+Services :
+
+Colocation (espaces serveurs, racks, cages privées)
+
+Cloud privé
+
+Cloud hybride
+
+Services IaaS et plateformes virtualisées (VMware, Kubernetes, OpenStack)
+
+Connectivité multi-opérateurs (transit IP, MPLS, VPN)
+
+Services de cybersécurité (pare-feu managés, anti-DDoS, segmentation réseau)
+
+Services managés (monitoring 24/7, support technique, administration)
+
+Sauvegarde et continuité d’activité (PRA/PCA)
+
+Solutions HPC et edge computing (en développement)
+
+Typologie de clients :
+
+Grandes entreprises privées (banques, assurances, télécoms, industrie)
+
+PME et startups technologiques
+
+Organisations publiques (ministères, régies, collectivités)
+
+Partenaires cloud et intégrateurs internationaux
+
+Architecture technique :
+Les datacenters de N+One sont construits selon des schémas de redondance N+1 ou 2N, incluant une alimentation sécurisée, des systèmes de refroidissement haute efficacité, des onduleurs et groupes électrogènes redondants, ainsi qu’une infrastructure réseau multi-opérateurs. Ils intègrent des systèmes de détection incendie de type VESDA, un contrôle d’accès biométrique et une vidéosurveillance continue.
+
+Certifications :
+
+Tier III / Tier IV (Uptime Institute, selon les sites)
+
+ISO 27001 (sécurité de l’information)
+
+ISO 22301 (continuité d’activité)
+
+ISO 50001 (performance énergétique)
+
+PCI-DSS (sécurité des données bancaires)
+
+Conformité GDPR
+
+Objectifs stratégiques :
+
+Court terme (1 à 2 ans) :
+
+Expansion de la capacité d’hébergement au Maroc
+
+Renforcement des plateformes cloud
+
+Amélioration des services HPC et IA
+
+Moyen terme (3 à 5 ans) :
+
+Déploiement d’un réseau national de datacenters
+
+Consolidation d’un cloud souverain marocain
+
+Renforcement du pôle cybersécurité (SOC régional)
+
+Long terme (5 à 10 ans) :
+
+Création d’un hub numérique africain
+
+Développement d’une plateforme cloud panafricaine
+
+Leadership dans le edge computing africain
+
+Différenciateurs :
+
+Infrastructure souveraine basée au Maroc
+
+Indépendance vis-à-vis des opérateurs télécoms (carrier-neutral)
+
+Certifications internationales de haut niveau
+
+Expertise locale et support 24/7
+
+Approche sur mesure adaptée aux besoins des entreprises
+
+Orientation vers l’innovation, le cloud et le edge computing
+
+Résumé final :
+N+One Datacenter est un acteur marocain majeur du datacenter et du cloud souverain, proposant des infrastructures hautement disponibles, sécurisées et certifiées, avec une stratégie d’expansion nationale et africaine. L’entreprise combine expertise locale, innovation technologique et alignement avec les besoins des entreprises pour construire une plateforme numérique souveraine pour le Maroc et le continent africain.
+
+Si tu veux, je peux aussi te préparer :
+
+une version plus courte (pour un prompt),
+
+une version segmentée en plusieurs fichiers RAG,
+
+une version JSON,
+
+une version « optimisée LLM » avec sections étiquetées.

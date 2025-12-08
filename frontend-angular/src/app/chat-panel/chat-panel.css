@@ -1,133 +1,210 @@
+/* ======================================================
+   🎨 THEME FUTURISTE / HOLOGRAPHIQUE
+   Couleurs principales respectées : GoldYellow, DeepOlive, IvoryWhite
+   Ajout : bordures néon, multicolor, animations
+====================================================== */
+
+:root {
+  --bg-ivory: #F3EFE2;
+  --gold: #E8C602;
+  --olive: #9C9873;
+  --text-dark: #1E1C14;
+  --multi-gradient: linear-gradient(135deg, #E8C602, #FF7B00, #FF2D95, #6A5BFF, #19E0FF);
+}
+
+/* -------- PANEL -------- */
 .chat-panel {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #FDFBF5; /* IvoryWhite */
-  padding: 15px;
+  background: #F3EFE2;
+  padding: 18px;
   height: 100%;
-  color: #1E1C14; /* TextDark */
+  color: var(--text-dark);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 16px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 0 20px rgba(232, 198, 2, 0.15);
 }
 
-/* --------- MESSAGES --------- */
+/* -------- MESSAGES -------- */
 .messages {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   overflow-y: auto;
-  padding-bottom: 10px;
+  padding-bottom: 15px;
 }
 
-/* Alignement */
+/* Alignements */
 .user { align-self: flex-end; }
 .bot { align-self: flex-start; }
 
-/* --------- BULLES --------- */
+/* -------- BULLES -------- */
 .bubble {
   max-width: 70%;
-  border-radius: 16px;
-  padding: 10px 15px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-  word-break: break-word;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  border-radius: 14px;
+  padding: 12px 18px;
+  background: rgba(255,255,255,0.05);
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(6px);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  animation: fadeIn 0.3s ease forwards;
 }
 
-/* Utilisateur → doré profond */
+/* -------- BULLE UTILISATEUR (néon doré + multicolor) -------- */
 .user .bubble {
-  background-color: #E8C602; /* GoldYellow */
-  color: #FFFFFF;
+  color: #fff;
+  background: rgba(232, 198, 2, 0.85);
+  border: 2px solid #FFE55C;
+  box-shadow: 0 0 12px rgba(232, 198, 2, 0.6);
 }
 
-/* Bot → olive clair */
+/* -------- BULLE BOT (olive holographique + glow) -------- */
 .bot .bubble {
-  background-color: #9C9873; /* DeepOlive */
-  color: #FFFFFF;
+  color: #fff;
+  background: rgba(156, 152, 115, 0.85);
+  border: 2px solid rgba(255,255,255,0.3);
+  box-shadow: 0 0 12px rgba(156,152,115,0.5);
 }
 
-/* --------- TEXTE --------- */
-.text {
-  white-space: pre-line;
+/* Animation apparition */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-/* --------- FICHIERS --------- */
+/* -------- FICHIERS -------- */
 .file-message {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .file-link {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: #FFFFFF;
-  border-radius: 10px;
-  padding: 10px 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.08);
   text-decoration: none;
-  font-weight: 500;
-  color: #70704C; /* SoftBrown */
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  transition: all 0.25s ease;
-}
-
-.user .file-link {
-  background: rgba(255, 255, 255, 0.9);
-  color: #1E1C14; /* TextDark */
-}
-
-.bot .file-link {
-  background: #F8F8F6;
-  color: #70704C;
+  font-weight: 600;
+  color: var(--text-dark);
+  border: 2px solid rgba(255,255,255,0.25);
+  transition: all 0.3s ease;
 }
 
 .file-link:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12);
-  background-color: #FFE55C; /* ButtonHover */
-  color: #1E1C14; /* TextDark */
+  background: rgba(255,255,255,0.25);
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 0 10px rgba(255, 229, 92, 0.5);
 }
 
-/* --------- ICONES --------- */
+/* -------- IMAGE -------- */
+.preview-image {
+  max-width: 220px;
+  border-radius: 12px;
+  box-shadow: 0 0 18px rgba(0, 0, 0, 0.2);
+}
+
+/* -------- BARRE D'ENTRÉE -------- */
+.input-bar {
+  padding: 12px;
+  background: rgba(255,255,255,0.5);
+  border-top: 2px solid var(--olive);
+  backdrop-filter: blur(6px);
+  position: sticky;
+  bottom: 0;
+}
+
+/* ===== Markdown minimal ===== */
+.markdown h1 {
+  font-size: 1.6rem;
+  margin: 10px 0;
+  color: #FFE55C;
+}
+
+.markdown h2 {
+  font-size: 1.3rem;
+  margin: 8px 0;
+  color: #FFD447;
+}
+
+.markdown p {
+  margin: 6px 0;
+  line-height: 1.6;
+}
+
+.markdown ul {
+  padding-left: 20px;
+  margin: 8px 0;
+}
+
+.markdown li {
+  margin: 4px 0;
+}
+
+.markdown code {
+  background: rgba(255,255,255,0.15);
+  padding: 2px 5px;
+  border-radius: 5px;
+  font-family: monospace;
+}
+
+
+/* Champ texte futuriste */
+.input-bar input[type="text"],
+.input-bar textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 2px solid rgba(150,150,150,0.3);
+  background: rgba(255,255,255,0.7);
+  font-size: 15px;
+  outline: none;
+  transition: all 0.25s ease;
+}
+
+.input-bar input:focus,
+.input-bar textarea:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 12px rgba(232,198,2,0.4);
+}
+
+/* -------- BUTTON FUTURISTE MULTICOLOR -------- */
+.send-button {
+  margin-top: 10px;
+  border: none;
+  padding: 10px 22px;
+  font-size: 15px;
+  font-weight: 700;
+  border-radius: 12px;
+  cursor: pointer;
+  color: #1E1C14;
+  background: var(--multi-gradient);
+  background-size: 300% 300%;
+  animation: holoMove 4s linear infinite;
+  box-shadow: 0 0 14px rgba(232,198,2,0.5);
+  transition: all 0.3s ease;
+}
+
+@keyframes holoMove {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.send-button:hover {
+  transform: translateY(-3px) scale(1.03);
+  box-shadow: 0 0 20px rgba(255, 229, 92, 0.8);
+}
 .file-icon {
   width: 22px;
   height: 22px;
   object-fit: contain;
   filter: brightness(0.9);
-}
-
-/* --------- IMAGE PREVIEW --------- */
-.preview-image {
-  max-width: 200px;
-  border-radius: 10px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-}
-
-/* --------- BARRE D’ENTRÉE --------- */
-.input-bar {
-  border-top: 1px solid #9C9873; /* DeepOlive */
-  padding: 10px;
-  background: #FFFEF5;
-  position: sticky;
-  bottom: 0;
-}
-
-/* --------- BOUTON ENVOYER --------- */
-.send-button {
-  background-color: #E8C602; /* GoldYellow */
-  border: none;
-  color: #FFFFFF;
-  font-weight: 600;
-  padding: 8px 16px;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.send-button:hover {
-  background-color: #FFE55C; /* ButtonHover */
-  color: #1E1C14; /* TextDark */
-  transform: translateY(-2px);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
 }

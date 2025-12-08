@@ -75,6 +75,31 @@ app.get("/api/chat/messages/:id", async (req, res) => {
     res.status(500).json({ error: "Erreur proxy messages" });
   }
 });
+// 📁 Télécharger un fichier depuis FastAPI via proxy Express
+app.get("/api/chat/file/:id", async (req, res) => {
+  const fileId = req.params.id;
+
+  try {
+    const url = `${FASTAPI_URL}/file/${fileId}`;
+    console.log("🔗 Proxy téléchargement →", url);
+
+    const response = await axios({
+      url,
+      method: "GET",
+      responseType: "stream"
+    });
+
+    res.setHeader("Content-Type", response.headers["content-type"]);
+    res.setHeader("Content-Disposition", response.headers["content-disposition"] || "attachment");
+
+    response.data.pipe(res);
+
+  } catch (err) {
+    console.error("❌ Erreur proxy fichier:", err.message);
+    res.status(500).json({ error: "Impossible de récupérer le fichier." });
+  }
+});
+
 
 // Message + fichiers
 app.post("/api/chat/message/:id", upload.array("files"), async (req, res) => {

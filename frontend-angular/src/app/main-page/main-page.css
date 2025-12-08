@@ -1,34 +1,150 @@
+/* ======================================================
+   🎨 FUTURISTIC LAYOUT — GLASS + HOLOGRAPHIC SEPARATOR
+====================================================== */
+
+:root {
+  --bg-ivory: #FDFBF5;
+  --gold: #E8C602;
+  --olive: #9C9873;
+  --text-dark: #1E1C14;
+  --holo-gradient: linear-gradient(180deg, #E8C602, #FF7B00, #FF2D95, #6A5BFF, #19E0FF);
+}
+
+/* --------- PAGE PRINCIPALE --------- */
 .main-page {
   display: flex;
   flex-direction: column;
-  height: 100vh; /* toute la hauteur écran */
+  height: 100vh;
+
+  background: radial-gradient(ellipse at top, #FFFBEA 10%, #F6F2DA 50%, #E9E4C7 100%);
+  backdrop-filter: blur(6px);
 }
 
+/* --------- CONTENU SPLITTÉ --------- */
 .content {
   display: flex;
   flex: 1;
-  overflow: hidden; /* empêche le scroll global */
+  overflow: hidden;
+
+  border-top: 2px solid rgba(156,152,115,0.35);
+  box-shadow: 0 -4px 20px rgba(0,0,0,0.05);
 }
 
-/* panneau de gauche (history) */
+/* ======================================================
+   PANEL GAUCHE (HISTORY PANEL FUTURISTE)
+====================================================== */
 .history {
-  width: 400px;        /* largeur fixe */
-  background: #f4f4f4;
-  border-right: 1px solid #ddd;
-  overflow-y: auto;    /* scroll uniquement dans l’historique si trop long */
+  width: 380px;
+  background: rgba(255,255,255,0.45);
+  backdrop-filter: blur(10px);
+
+  border-right: 3px solid transparent;
+  border-image: var(--holo-gradient) 1;
+  border-image-slice: 1;
+
+  box-shadow: 4px 0 20px rgba(0,0,0,0.06);
+
+  overflow-y: auto;
+  animation: panelReveal 0.4s ease-out forwards;
 }
 
-/* panneau de droite (chat) */
+/* Animation légère d'apparition */
+@keyframes panelReveal {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Scrollbar futuriste */
+.history::-webkit-scrollbar {
+  width: 6px;
+}
+.history::-webkit-scrollbar-thumb {
+  background: var(--gold);
+  border-radius: 10px;
+}
+.history::-webkit-scrollbar-track {
+  background: rgba(0,0,0,0.05);
+}
+
+/* ======================================================
+   PANEL DROIT (CHAT FUTURISTE)
+====================================================== */
 .chat {
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden; /* pas de scroll global */
+  overflow: hidden;
+
+  background: rgba(255,255,255,0.6);
+  backdrop-filter: blur(12px);
+
+  box-shadow: inset 0 0 20px rgba(0,0,0,0.05);
 }
 
-/* scroll uniquement dans la zone de messages */
+/* Zone des messages (scroll only here) */
 .chat .messages {
   flex: 1;
   overflow-y: auto;
-  padding: 15px;
+  padding: 18px;
+
+  /* Effet glow autour des bulles */
+  background: rgba(255,255,255,0.25);
+  backdrop-filter: blur(4px);
+}
+
+/* Scrollbar futuriste */
+.chat .messages::-webkit-scrollbar {
+  width: 6px;
+}
+.chat .messages::-webkit-scrollbar-thumb {
+  background: var(--olive);
+  border-radius: 10px;
+}
+.chat .messages::-webkit-scrollbar-thumb:hover {
+  background: var(--gold);
+}
+
+
+/* ====== RESIZER FUTURISTE ====== */
+.resizer {
+  width: 6px;
+  cursor: col-resize;
+  background: linear-gradient(180deg, #E8C602, #FF7B00, #FF2D95, #6A5BFF, #19E0FF);
+  background-size: 200% 200%;
+  animation: holoMove 4s linear infinite;
+
+  /* effet glass */
+  backdrop-filter: blur(4px);
+
+  /* zone plus large invisible pour faciliter le drag */
+  position: relative;
+}
+.resizer::after {
+  content: "";
+  position: absolute;
+  left: -4px;
+  width: 14px;
+  height: 100%;
+  cursor: col-resize;
+}
+
+/* animation du gradient */
+@keyframes holoMove {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* ====== History collapsable ====== */
+.history {
+  min-width: 0;        /* Permet de disparaître */
+  max-width: 600px;    /* Largeur max */
+  width: 380px;        /* valeur par défaut */
+  transition: width 0.2s ease;
+}
+
+/* Chat prend tout le reste */
+.chat {
+  flex: 1;
+  min-width: 200px;
 }

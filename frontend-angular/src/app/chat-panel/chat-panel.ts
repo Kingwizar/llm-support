@@ -3,6 +3,8 @@ import { CommonModule } from '@angular/common';
 import { HistoryService } from '../services/history/history';
 import { ChatService } from '../services/chat/chat';
 import { InputBar } from '../input-bar/input-bar';
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 
 interface UploadedFile {
   file_id: string;
@@ -45,61 +47,84 @@ export class ChatPanelComponent implements OnInit {
       }
     });
   }
+  renderMarkdown(md: string): string {
+  const html = marked.parse(md || '') as string;
+  return DOMPurify.sanitize(html);
+}
+
 
   /** Envoi du message + fichiers */
   onSendMessage(event: { text: string; files: File[] }) {
-    if (!this.activeConversation?.id && !this.activeConversation?._id) {
-      this.chat.pushBotMessage("⚠️ Aucune conversation active");
-      return;
-    }
-
-    const convId = this.activeConversation.id || this.activeConversation._id;
-    const { text, files } = event;
-
-    const formData = new FormData();
-    formData.append('text', text || '');
-    files.forEach(file => formData.append('files', file));
-
-    console.log("📤 Envoi message:", text, "fichiers:", files.length);
-
-    this.chat.sendMessage(convId, formData).subscribe({
-      next: (res: any) => {
-        console.log("✅ Message envoyé:", res);
-
-        // Recharge les messages depuis la base pour afficher les fichiers uploadés
-        this.history.getMessages(convId).subscribe(msgs => {
-          this.messages = msgs;
-          console.log("🔄 Rechargement complet depuis la base:", msgs.length, "messages");
-        });
-
-        // Lance le RAG uniquement si un texte a été envoyé
-        if (text.trim()) {
-          this.chat.askLLM(text, convId).subscribe({
-            next: (resp) => {
-              const botMessage = {
-                role: 'bot',
-                content:
-                  (resp.steps?.length ? resp.steps.join('\n') : '') +
-                  (resp.citations?.length
-                    ? `\n📚 Sources: ${resp.citations.map(c => c.doc).join(', ')}`
-                    : ''),
-                isUser: false
-              };
-              this.messages.push(botMessage);
-            },
-            error: (err) => {
-              console.error('❌ Erreur RAG:', err);
-              this.chat.pushBotMessage('⚠️ Erreur RAG : ' + err.message);
-            }
-          });
-        }
-      },
-      error: (err) => {
-        console.error("❌ Erreur sendMessage:", err);
-        this.chat.pushBotMessage('⚠️ Erreur lors de l’envoi : ' + err.message);
-      }
-    });
+  if (!this.activeConversation?.id && !this.activeConversation?._id) {
+    this.chat.pushBotMessage("⚠️ Aucune conversation active");
+    return;
   }
+
+  const convId = this.activeConversation.id || this.activeConversation._id;
+  const { text, files } = event;
+
+  const formData = new FormData();
+  formData.append('text', text || '');
+  files.forEach(file => formData.append('files', file));
+
+  console.log("📤 Envoi message:", text, "fichiers:", files.length);
+
+  this.chat.sendMessage(convId, formData).subscribe({
+    next: (res: any) => {
+      console.log("✅ Message envoyé:", res);
+
+      // Recharge les messages de la base
+      this.history.getMessages(convId).subscribe(msgs => {
+        this.messages = msgs;
+        console.log("🔄 Rechargement complet depuis la base:", msgs.length, "messages");
+      });
+
+      // Lance le RAG uniquement si un texte a été envoyé
+      if (text.trim()) {
+        this.chat.askLLM(text, convId).subscribe({
+          next: (resp) => {
+
+            // 🔥 Construction d’un Markdown propre
+            const markdownContent = (() => {
+              let md = '';
+
+              // 🟦 1. Contenu principal (steps)
+              if (resp.steps?.length) {
+                md += resp.steps.join('\n\n');   // ✔ double saut de ligne Markdown
+              }
+
+              // 🟩 2. Sources au format Markdown propre
+              if (resp.citations?.length) {
+                md += `\n\n### 📚 Sources\n`;       // ✔ titre Markdown
+                md += resp.citations
+                  .map(c => `- ${c.doc}`)         // ✔ liste Markdown
+                  .join('\n');
+              }
+
+              return md.trim();
+            })();
+
+            const botMessage = {
+              role: 'bot',
+              content: markdownContent,
+              isUser: false
+            };
+
+            this.messages.push(botMessage);
+          },
+          error: (err) => {
+            console.error('❌ Erreur RAG:', err);
+            this.chat.pushBotMessage('⚠️ Erreur RAG : ' + err.message);
+          }
+        });
+      }
+    },
+    error: (err) => {
+      console.error("❌ Erreur sendMessage:", err);
+      this.chat.pushBotMessage('⚠️ Erreur lors de l’envoi : ' + err.message);
+    }
+  });
+}
 
   /** Choix de l’icône pour un fichier */
   getFileIcon(nameOrType?: string): string {
@@ -107,6 +132,6 @@ export class ChatPanelComponent implements OnInit {
     if (name.endsWith('.pdf')) return 'icon/pdf.png';
     if (name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'icon/img.png';
     if (name.endsWith('.doc') || name.endsWith('.docx')) return 'icon/docx.png';
-    return 'assets/icons/file.png';
+    return 'icon/dossier.png';
   }
 }

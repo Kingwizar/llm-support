@@ -138,7 +138,7 @@ def answer_with_rag_or_web(question: str, top_k: int = TOP_K_DEFAULT) -> Dict[st
 
 
 
-def query_ollama(prompt: str, model_name: str = "mistral-small:24b") -> str:
+def query_ollama(prompt: str, model_name: str = "qwen14b_llm") -> str:
     url = "http://127.0.0.1:11434/api/chat"  # ✅ force IPv4
     payload = {
         "model": model_name,
@@ -184,7 +184,7 @@ def test_rag_with_ollama(question: str):
     print("\n=== PROMPT ===")
     print(pack["prompt"][:1000], "...")
     print("\n=== OLLAMA RESPONSE ===")
-    answer = query_ollama(pack["prompt"], "mistral-small:24b")
+    answer = query_ollama(pack["prompt"], "qwen14b_llm")
     print(answer)
 
 #--------------------------------Voice agent version ------------------------------------
@@ -193,7 +193,7 @@ def test_rag_with_ollama(question: str):
 # 🎤 AGENT VOCAL 3D UNREAL
 # ===========================
 
-def query_ollama_voice_agent(user_text: str, model_name: str = "mistral-small:24b") -> str:
+def query_ollama_voice_agent(user_text: str, model_name: str = "qwen14b_llm") -> str:
     """
     Agent vocal pour personnage 3D Unreal.
     Utilise un prompt optimisé pour TTS + animation faciale.

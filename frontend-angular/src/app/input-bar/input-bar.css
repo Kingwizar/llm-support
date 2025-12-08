@@ -1,91 +1,140 @@
+/* ======================================================
+   🎨 FUTURISTIC INPUT BAR — GLASS + NEON
+====================================================== */
+
+:root {
+  --bg-ivory: #FDFBF5;
+  --gold: #E8C602;
+  --gold-light: #FFE55C;
+  --olive: #9C9873;
+  --text-dark: #1E1C14;
+  --holo-gradient: linear-gradient(135deg, #E8C602, #FF7B00, #FF2D95, #6A5BFF, #19E0FF);
+}
+
+/* --------- INPUT BAR --------- */
 .input-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  border-top: 1px solid #9C9873; /* DeepOlive */
-  padding: 10px;
-  background: #FDFBF5; /* IvoryWhite */
+  gap: 10px;
+
+  padding: 12px;
+  background: rgba(253, 251, 245, 0.75); /* Ivory + transparency */
+  border-top: 2px solid rgba(156, 152, 115, 0.45);
+
+  backdrop-filter: blur(8px);
+  box-shadow: 0 -2px 18px rgba(0,0,0,0.08);
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
 }
 
-/* --------- CHAMP DE TEXTE --------- */
+/* --------- CHAMP DE TEXTE FUTURISTE --------- */
 .input-bar input[type="text"] {
   flex: 1;
-  padding: 10px;
-  border-radius: 8px;
-  border: 1px solid #9C9873; /* DeepOlive */
-  font-size: 14px;
-  background: #FFFFFF;
-  color: #1E1C14; /* TextDark */
-  transition: all 0.25s ease;
+  padding: 12px 14px;
+  border-radius: 10px;
+
+  border: 2px solid rgba(156,152,115,0.6);
+  background: rgba(255,255,255,0.7);
+  color: var(--text-dark);
+
+  font-size: 15px;
+  transition: all 0.3s ease;
+
+  backdrop-filter: blur(4px);
 }
 
 .input-bar input[type="text"]:focus {
   outline: none;
-  border-color: #E8C602; /* GoldYellow */
-  box-shadow: 0 0 6px rgba(232, 198, 2, 0.4);
+  border-color: var(--gold);
+  background: rgba(255,255,255,0.9);
+  box-shadow: 0 0 12px rgba(232,198,2,0.45), inset 0 0 6px rgba(255,255,255,0.4);
+  transform: scale(1.01);
 }
 
-/* --------- BOUTONS --------- */
+/* --------- BOUTONS FUTURISTES --------- */
 .upload-btn,
 .send-btn {
-  padding: 8px 14px;
+  padding: 10px 16px;
   border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  color: #FFFFFF;
-  font-weight: 600;
+  border-radius: 10px;
+
+  font-weight: 700;
   font-size: 14px;
-  transition: all 0.3s ease;
+  color: #1E1C14;
+
+  cursor: pointer;
+  transition: all 0.35s ease;
+  position: relative;
+
+  box-shadow: 0 0 10px rgba(0,0,0,0.12);
 }
 
-/* Bouton Upload — olive clair */
+/* ===== Upload Button — Olive Neon ===== */
 .upload-btn {
-  background-color: #9C9873; /* DeepOlive */
-}
-.upload-btn:hover {
-  background-color: #70704C; /* SoftBrown */
-  transform: translateY(-2px);
-  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
+  background: linear-gradient(135deg, #9C9873, #70704C);
+  color: #fff;
 }
 
-/* Bouton Envoyer — doré principal */
-.send-btn {
-  background-color: #E8C602; /* GoldYellow */
+.upload-btn:hover {
+  transform: translateY(-3px) scale(1.03);
+  box-shadow: 0 0 15px rgba(156,152,115,0.6);
 }
+
+/* ===== Send Button — Multicolor Holographic ===== */
+.send-btn {
+   background-color: #E8C602; /* GoldYellow */
+  background-size: 300% 300%;
+  animation: holoShift 4s linear infinite;
+  color: #1E1C14;
+  font-weight: 700;
+}
+
 .send-btn:hover {
-  background-color: #FFE55C; /* ButtonHover */
-  color: #1E1C14; /* TextDark */
-  transform: translateY(-2px);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
+  transform: translateY(-3px) scale(1.05);
+  box-shadow: 0 0 20px rgba(255,229,92,0.75);
+}
+
+
+/* Animation holo */
+@keyframes holoShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
 }
 
 /* --------- FICHIERS SÉLECTIONNÉS --------- */
 .selected-files {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin: 5px 10px;
+  gap: 8px;
+  margin: 6px 10px;
 }
 
 .file {
-  background: #FFF8CC; /* Doré très clair */
-  padding: 5px 10px;
-  border-radius: 8px;
+  background: rgba(255,248,204,0.9);
+  padding: 6px 12px;
+  border-radius: 10px;
+
   display: flex;
   align-items: center;
-  gap: 6px;
-  color: #1E1C14;
+  gap: 8px;
+
+  color: var(--text-dark);
   font-size: 13px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+
+  border: 1px solid rgba(232,198,2,0.4);
+  box-shadow: 0 0 6px rgba(0,0,0,0.08);
 }
 
+/* Bouton suppression */
 .remove {
-  color: #E63946; /* Rouge doux pour supprimer */
+  color: #E63946;
   cursor: pointer;
   font-weight: bold;
   transition: transform 0.2s ease;
 }
 
 .remove:hover {
-  transform: scale(1.2);
+  transform: scale(1.3);
 }

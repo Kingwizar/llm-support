@@ -1,0 +1,9 @@
+Node.js / npm
+- npm : 10.9.0
+
+Angular CLI :
+- @angular/cli : 20.3.3
+
+Python / pip :
+- Python : 3.12
+- pip : 23.2.1
