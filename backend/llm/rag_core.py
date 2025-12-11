@@ -71,7 +71,7 @@ def answer_with_rag_or_web(question: str, top_k: int = TOP_K_DEFAULT) -> Dict[st
     et combine les résultats web avec ceux du RAG (si pertinents).
     """
 
-    # 🧩 Étape 1 — Recherche web systématique
+    #  Étape 1 — Recherche web systématique
     web_results = simple_web_search(question, num_results=3, full_content=True)
     web_block = "\n".join(
     f"[WEB] {r.get('title', '')}\nURL: {r.get('url', '')}\n{r.get('content', r.get('snippet', ''))[:2000]}"
@@ -80,7 +80,7 @@ def answer_with_rag_or_web(question: str, top_k: int = TOP_K_DEFAULT) -> Dict[st
 
     web_citations = [{"doc": r.get("url", ""), "score": 0.3} for r in web_results if not r.get("error")]
 
-    # 🧠 Étape 2 — Vérifie si l'index local est pertinent
+    #  Étape 2 — Vérifie si l'index local est pertinent
     try:
         model, index, recs = load_index()
         q_emb = model.encode([question], normalize_embeddings=True).astype("float32")
@@ -100,7 +100,7 @@ def answer_with_rag_or_web(question: str, top_k: int = TOP_K_DEFAULT) -> Dict[st
 
     SIM_THRESHOLD = 0.35
 
-    # ⚙️ Étape 3 — Si l'index n’est pas pertinent, ne garder que le web
+    # Étape 3 — Si l'index n’est pas pertinent, ne garder que le web
     if max_sim < SIM_THRESHOLD:
         print(f"[INFO] Similarité faible ({max_sim:.2f}) → réponse uniquement web")
         prompt = build_runtime_prompt(question, web_citations, web_block)
@@ -114,7 +114,7 @@ def answer_with_rag_or_web(question: str, top_k: int = TOP_K_DEFAULT) -> Dict[st
             "similarity": max_sim,
         }
 
-    # 🧱 Étape 4 — Sinon, on combine RAG + Web
+    #  Étape 4 — Sinon, on combine RAG + Web
     pack = rag_prepare(question, top_k)
     hits = pack.get("citations", [])
     sources_block = pack.get("sources_block", "")
@@ -139,7 +139,7 @@ def answer_with_rag_or_web(question: str, top_k: int = TOP_K_DEFAULT) -> Dict[st
 
 
 def query_ollama(prompt: str, model_name: str = "qwen14b_llm") -> str:
-    url = "http://127.0.0.1:11434/api/chat"  # ✅ force IPv4
+    url = "http://127.0.0.1:11434/api/chat" 
     payload = {
         "model": model_name,
         "messages": [
@@ -190,7 +190,7 @@ def test_rag_with_ollama(question: str):
 #--------------------------------Voice agent version ------------------------------------
 
 # ===========================
-# 🎤 AGENT VOCAL 3D UNREAL
+#  AGENT VOCAL 3D UNREAL
 # ===========================
 
 def query_ollama_voice_agent(user_text: str, model_name: str = "qwen14b_llm") -> str:
@@ -200,7 +200,7 @@ def query_ollama_voice_agent(user_text: str, model_name: str = "qwen14b_llm") ->
     """
     url = "http://127.0.0.1:11434/api/chat"
 
-    # 🔥 prompt optimisé pour la voix + animation MetaHuman
+    #  prompt optimisé pour la voix + animation MetaHuman
     prompt = build_voice_agent_prompt(user_text)
 
     payload = {

@@ -34,7 +34,7 @@ ngAfterViewInit() {
     let newWidth = leftWidth + dx;
 
     // limites
-    if (newWidth < 40) newWidth = 0;          // collapse auto
+    if (newWidth < 40) newWidth = 0;          
     if (newWidth > 600) newWidth = 600;
 
     leftPane.setAttribute("style", `width: ${newWidth}px`);

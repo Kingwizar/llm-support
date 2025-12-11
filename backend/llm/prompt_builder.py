@@ -30,6 +30,9 @@ with N+One’s identity, services, and values.
 RUNTIME_TEMPLATE = """[SYSTEM]
 {system}
 
+[CONVERSATION MEMORY - LAST 3 EXCHANGES]
+{memory}
+
 [USER QUESTION]
 {question}
 
@@ -39,20 +42,40 @@ RUNTIME_TEMPLATE = """[SYSTEM]
 [INSTRUCTION]
 - Use internal RAG documents as the **main and most reliable source of truth**.
 - Use web search results only as a **secondary complement** when RAG is insufficient.
-- If the topic concerns N+One (company, services, infrastructure, security, teams, 
-  identity), ALWAYS rely on RAG first.
+- If the topic concerns N+One, ALWAYS rely on RAG first.
 - Do not reveal internal tags ([WEB], [S], etc.).
 - Do not mention how the information was retrieved.
-- Produce the final answer in clean, professional **Markdown**.
-
+- Answer in clean, professional Markdown.
 """
+
 
 
 # ================= BUILD PROMPTS =================
 
 def build_runtime_prompt(question: str, hits: List[Dict[str, Any]], sources_block: str) -> str:
-    """Assemble le prompt complet envoyé au modèle."""
-    return RUNTIME_TEMPLATE.format(system=SYSTEM_RAG, question=question, sources_block=sources_block)
+    return RUNTIME_TEMPLATE.format(
+        system=SYSTEM_RAG,
+        memory="(Memory not used in RAG core)",
+        question=question,
+        sources_block=sources_block,
+    )
+
+
+def build_runtime_prompt_with_memory(
+    question: str,
+    hits: List[Dict[str, Any]],
+    sources_block: str,
+    memory_context: str
+) -> str:
+    return RUNTIME_TEMPLATE.format(
+        system=SYSTEM_RAG,
+        memory=memory_context or "(Aucun historique pour cette conversation)",
+        question=question,
+        sources_block=sources_block,
+    )
+
+
+
 
 def build_prompt_from_extracted_file(file_info: dict) -> str:
     """Construit un prompt à partir du texte extrait d’un fichier (PDF, image, Word)."""

@@ -20,6 +20,7 @@ interface Message {
   files?: UploadedFile[];
   isUser?: boolean;
   uploaded_at?: string;
+  _welcome?: boolean; // Tag interne pour message d’accueil
 }
 
 @Component({
@@ -36,17 +37,33 @@ export class ChatPanelComponent implements OnInit {
   constructor(private history: HistoryService, private chat: ChatService) {}
 
   ngOnInit() {
-    // Quand une conversation devient active
-    this.history.activeConversation$.subscribe(conv => {
-      this.activeConversation = conv;
-      if (conv?.id || conv?._id) {
-        this.history.getMessages(conv.id || conv._id).subscribe(msgs => {
-          this.messages = msgs;
-          console.log("💬 Messages chargés:", msgs.length);
-        });
-      }
-    });
-  }
+  this.history.activeConversation$.subscribe(conv => {
+    this.activeConversation = conv;
+
+    if (conv?.id || conv?._id) {
+      const convId = conv.id || conv._id;
+
+      this.history.getMessages(convId).subscribe(msgs => {
+        console.log("Messages chargés:", msgs.length);
+
+        this.messages = msgs;
+
+        // 🚀 Si AUCUN message pour cette conversation → message d’accueil
+        if (msgs.length === 0) {
+          this.messages = [
+            {
+              role: "bot",
+              content: "Par quoi commençons-nous ?",
+              isUser: false,
+              _welcome: true  // 🔒 On tague ce message pour ne JAMAIS l'envoyer au LLM
+            }
+          ];
+        }
+      });
+    }
+  });
+}
+
   renderMarkdown(md: string): string {
   const html = marked.parse(md || '') as string;
   return DOMPurify.sanitize(html);
@@ -56,7 +73,7 @@ export class ChatPanelComponent implements OnInit {
   /** Envoi du message + fichiers */
   onSendMessage(event: { text: string; files: File[] }) {
   if (!this.activeConversation?.id && !this.activeConversation?._id) {
-    this.chat.pushBotMessage("⚠️ Aucune conversation active");
+    this.chat.pushBotMessage("Aucune conversation active");
     return;
   }
 
@@ -67,33 +84,36 @@ export class ChatPanelComponent implements OnInit {
   formData.append('text', text || '');
   files.forEach(file => formData.append('files', file));
 
-  console.log("📤 Envoi message:", text, "fichiers:", files.length);
+  console.log("Envoi message:", text, "fichiers:", files.length);
 
   this.chat.sendMessage(convId, formData).subscribe({
     next: (res: any) => {
-      console.log("✅ Message envoyé:", res);
+      console.log("Message envoyé:", res);
 
       // Recharge les messages de la base
       this.history.getMessages(convId).subscribe(msgs => {
         this.messages = msgs;
-        console.log("🔄 Rechargement complet depuis la base:", msgs.length, "messages");
+        console.log("Rechargement complet depuis la base:", msgs.length, "messages");
       });
 
       // Lance le RAG uniquement si un texte a été envoyé
       if (text.trim()) {
+        this.messages = this.messages.filter(m => !m._welcome);
+
+        
         this.chat.askLLM(text, convId).subscribe({
           next: (resp) => {
 
-            // 🔥 Construction d’un Markdown propre
+            // Construction d’un Markdown propre
             const markdownContent = (() => {
               let md = '';
 
-              // 🟦 1. Contenu principal (steps)
+              // 1. Contenu principal (steps)
               if (resp.steps?.length) {
                 md += resp.steps.join('\n\n');   // ✔ double saut de ligne Markdown
               }
 
-              // 🟩 2. Sources au format Markdown propre
+              // 2. Sources au format Markdown propre
               if (resp.citations?.length) {
                 md += `\n\n### 📚 Sources\n`;       // ✔ titre Markdown
                 md += resp.citations
@@ -113,15 +133,15 @@ export class ChatPanelComponent implements OnInit {
             this.messages.push(botMessage);
           },
           error: (err) => {
-            console.error('❌ Erreur RAG:', err);
-            this.chat.pushBotMessage('⚠️ Erreur RAG : ' + err.message);
+            console.error('Erreur RAG:', err);
+            this.chat.pushBotMessage('Erreur RAG : ' + err.message);
           }
         });
       }
     },
     error: (err) => {
-      console.error("❌ Erreur sendMessage:", err);
-      this.chat.pushBotMessage('⚠️ Erreur lors de l’envoi : ' + err.message);
+      console.error("Erreur sendMessage:", err);
+      this.chat.pushBotMessage('Erreur lors de l’envoi : ' + err.message);
     }
   });
 }

@@ -37,7 +37,7 @@ app.use(
 
 // Logger
 app.use((req, res, next) => {
-  console.log(`📥 ${req.method} ${req.url}`);
+  console.log(`${req.method} ${req.url}`);
   next();
 });
 
@@ -49,7 +49,7 @@ app.get("/conversations", async (req, res) => {
     const response = await axios.get(`${FASTAPI_URL}/conversations`);
     res.json(response.data);
   } catch (err) {
-    console.error("❌ Erreur conversations:", err.message);
+    console.error("Erreur conversations:", err.message);
     res.status(500).json({ error: "Erreur Express → FastAPI" });
   }
 });
@@ -60,7 +60,7 @@ app.post("/conversations", async (req, res) => {
     const response = await axios.post(`${FASTAPI_URL}/conversations`, req.body);
     res.json(response.data);
   } catch (err) {
-    console.error("❌ Erreur création:", err.message);
+    console.error("Erreur création:", err.message);
     res.status(500).json({ error: "Erreur création conversation." });
   }
 });
@@ -71,17 +71,17 @@ app.get("/api/chat/messages/:id", async (req, res) => {
     const response = await axios.get(`${FASTAPI_URL}/conversations/${req.params.id}/messages`);
     res.json(response.data);
   } catch (err) {
-    console.error("❌ Erreur messages:", err.message);
+    console.error("Erreur messages:", err.message);
     res.status(500).json({ error: "Erreur proxy messages" });
   }
 });
-// 📁 Télécharger un fichier depuis FastAPI via proxy Express
+// Télécharger un fichier depuis FastAPI via proxy Express
 app.get("/api/chat/file/:id", async (req, res) => {
   const fileId = req.params.id;
 
   try {
     const url = `${FASTAPI_URL}/file/${fileId}`;
-    console.log("🔗 Proxy téléchargement →", url);
+    console.log("Proxy téléchargement →", url);
 
     const response = await axios({
       url,
@@ -95,7 +95,7 @@ app.get("/api/chat/file/:id", async (req, res) => {
     response.data.pipe(res);
 
   } catch (err) {
-    console.error("❌ Erreur proxy fichier:", err.message);
+    console.error("Erreur proxy fichier:", err.message);
     res.status(500).json({ error: "Impossible de récupérer le fichier." });
   }
 });
@@ -124,7 +124,7 @@ app.post("/api/chat/message/:id", upload.array("files"), async (req, res) => {
 
     res.json(response.data);
   } catch (err) {
-    console.error("❌ Erreur message:", err.message);
+    console.error("Erreur message:", err.message);
     res.status(500).json({ error: "Erreur envoi message." });
   }
 });
@@ -163,6 +163,6 @@ app.post("/api/chat", async (req, res) => {
 
 // ================== START SERVER ==================
 app.listen(PORT, () => {
-  console.log(`🚀 Express running → http://127.0.0.1:${PORT}`);
-  console.log(`🔗 Connected FastAPI → ${FASTAPI_URL}`);
+  console.log(`Express running → http://127.0.0.1:${PORT}`);
+  console.log(`Connected FastAPI → ${FASTAPI_URL}`);
 });

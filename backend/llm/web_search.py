@@ -2,12 +2,12 @@
 import os
 import requests
 from bs4 import BeautifulSoup
-from ddgs import DDGS   # 🔥 nouvelle API DuckDuckGo
+from ddgs import DDGS
 from datetime import datetime
 
 
 # ================================
-# 🔍 Extraction HTML complète
+# Extraction HTML complète
 # ================================
 def extract_full_text_from_url(url: str, max_chars: int = 3000) -> str:
     """Télécharge et extrait le texte lisible d'une page web."""
@@ -30,7 +30,7 @@ def extract_full_text_from_url(url: str, max_chars: int = 3000) -> str:
 
 
 # ================================
-# 🦆 Recherche DuckDuckGo (texte)
+# Recherche DuckDuckGo (texte)
 # ================================
 def duckduckgo_text_search(query: str, num_results: int = 5):
     """Recherche textuelle DuckDuckGo."""
@@ -43,7 +43,7 @@ def duckduckgo_text_search(query: str, num_results: int = 5):
 
 
 # ================================
-# 📰 Recherche DuckDuckGo News
+# Recherche DuckDuckGo News
 # ================================
 def duckduckgo_news_search(query: str, num_results: int = 5):
     """Recherche actualités DuckDuckGo."""
@@ -56,7 +56,7 @@ def duckduckgo_news_search(query: str, num_results: int = 5):
 
 
 # ================================
-# 🔎 Fallback "search" général
+# Fallback "search" général
 # ================================
 def duckduckgo_general_search(query: str, num_results: int = 5):
     """Fallback general search DuckDuckGo."""
@@ -69,7 +69,7 @@ def duckduckgo_general_search(query: str, num_results: int = 5):
 
 
 # ================================
-# 🌐 Fonction principale
+# Fonction principale
 # ================================
 def simple_web_search(query: str, num_results: int = 5, full_content: bool = True):
     """

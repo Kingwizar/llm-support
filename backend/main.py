@@ -20,7 +20,11 @@ from llm.rag_core import (
     query_ollama,
     query_ollama_voice_agent
 )
-from llm.prompt_builder import build_prompt_from_extracted_file
+from llm.prompt_builder import (
+    build_prompt_from_extracted_file,
+    build_runtime_prompt_with_memory
+)
+
 from ingest.file_ingest import extract_text_from_file
 from ingest.web_search import simple_web_search
 
@@ -65,8 +69,9 @@ app.add_middleware(
 client = AsyncIOMotorClient(MONGO_URI)
 db = client[MONGO_DB]
 conversations = db["conversations"]
+conversation_memory = db["conversation_memory"]
 fs = AsyncIOMotorGridFSBucket(db)
-logger.info(f"🔗 MongoDB connecté à {MONGO_URI}/{MONGO_DB}")
+logger.info(f" MongoDB connecté à {MONGO_URI}/{MONGO_DB}")
 
 # ======================================================
 # ----------------- MODELS -----------------------------
@@ -79,7 +84,7 @@ class ChatRequest(BaseModel):
 class Citation(BaseModel):
     doc: Optional[str] = ""
     score: float
-    snippet: Optional[str] = ""   # <= facultatif pour éviter l’erreur de validation
+    snippet: Optional[str] = ""
 
 class ChatResponse(BaseModel):
     summary: str
@@ -141,7 +146,7 @@ async def get_conversations():
         convs = await conversations.find().to_list(100)
         return [conv_helper(c) for c in convs]
     except Exception as e:
-        logger.error(f"❌ Erreur get_conversations : {e}", exc_info=True)
+        logger.error(f"Erreur get_conversations : {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/conversations/{conv_id}/messages")
@@ -152,7 +157,7 @@ async def get_messages(conv_id: str):
             raise HTTPException(status_code=404, detail="Conversation introuvable")
         return [clean_message(m) for m in conv.get("messages", [])]
     except Exception as e:
-        logger.error(f"❌ Erreur get_messages : {e}", exc_info=True)
+        logger.error(f"Erreur get_messages : {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/conversations")
@@ -239,7 +244,7 @@ async def send_message(
                 rag_data = answer_with_rag_or_web(file_prompt) or {}
             except Exception as e:
                 rag_data = {}
-                logger.warning(f"⚠️ Extraction RAG échouée pour {file.filename}: {e}")
+                logger.warning(f"Extraction RAG échouée pour {file.filename}: {e}")
             finally:
                 try:
                     os.remove(tmp_path)
@@ -270,16 +275,16 @@ async def send_message(
             {"$push": {"messages": message_doc}}
         )
 
-        logger.info(f"💬 Message enregistré (texte + {len(saved_files)} fichiers) dans {conv_id}")
+        logger.info(f"Message enregistré (texte + {len(saved_files)} fichiers) dans {conv_id}")
         return {
-            "message": "✅ Enregistré",
+            "message": "Enregistré",
             "files": saved_files,
             "content": (text or "").strip(),
             "conversation_id": conv_id
         }
 
     except Exception as e:
-        logger.error(f"❌ Erreur send_message : {e}", exc_info=True)
+        logger.error(f"Erreur send_message : {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 # ======================================================
@@ -288,30 +293,31 @@ async def send_message(
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
-    """
-    Pipeline RAG simplifié
-    """
     try:
-        logger.info(f"💬 Requête RAG : {req.question}")
+        logger.info(f"Requête RAG : {req.question}")
+
+        # 1️⃣ Récupération du contexte RAG
         pack = answer_with_rag_or_web(req.question) or {}
-        prompt = pack.get("prompt", "")
+        rag_prompt = pack.get("prompt", "")
+        sources_block = pack.get("sources_block", "")
 
+        # 2️⃣ Récupération de la mémoire de conversation
+        memory_context = ""
+        if req.conv_id:
+            memory_context = await get_memory_context(req.conv_id)
+
+        # 3️⃣ Construction du prompt final avec mémoire + RAG
+        prompt = build_runtime_prompt_with_memory(
+            question=req.question,
+            hits=pack.get("hits", []),
+            sources_block=sources_block,
+            memory_context=memory_context
+        )
+
+        # 4️⃣ Appel du modèle Ollama
         ollama_answer = query_ollama(prompt, model_name="qwen14b_llm")
-        # 3️⃣ Construire une réponse structurée
-        summary = ollama_answer.split("\n")[0][:300] if ollama_answer else "Aucune réponse."
-        steps = [line.strip() for line in ollama_answer.split("\n") if line.strip()]
-        # normalise les citations pour respecter le modèle Pydantic
-        citations = [
-            {
-                "doc": c.get("doc", ""),
-                "score": float(c.get("score", 0.0)),
-                "snippet": c.get("snippet", "")
-            }
-            for c in pack.get("citations", [])
-        ]
 
-        
-
+        # 5️⃣ Sauvegarde message bot dans la conversation
         if req.conv_id:
             await conversations.update_one(
                 {"_id": ObjectId(req.conv_id)},
@@ -323,6 +329,26 @@ async def chat(req: ChatRequest):
                 }}}
             )
 
+        # 6️⃣ Mise à jour de la mémoire (3 derniers échanges)
+        if req.conv_id:
+            await update_conversation_memory(
+                req.conv_id,
+                new_user_message=req.question,
+                new_assistant_message=ollama_answer
+            )
+
+        # 7️⃣ Construction de la réponse
+        summary = ollama_answer.split("\n")[0][:300] if ollama_answer else "Aucune réponse."
+        steps = [line.strip() for line in ollama_answer.split("\n") if line.strip()]
+        citations = [
+            {
+                "doc": c.get("doc", ""),
+                "score": float(c.get("score", 0.0)),
+                "snippet": c.get("snippet", "")
+            }
+            for c in pack.get("citations", [])
+        ]
+
         return ChatResponse(
             summary=summary,
             steps=steps,
@@ -331,8 +357,9 @@ async def chat(req: ChatRequest):
         )
 
     except Exception as e:
-        logger.error(f"❌ Erreur /chat : {e}", exc_info=True)
+        logger.error(f"Erreur /chat : {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # ======================================================
 # ----------------- ROUTE FICHIERS ---------------------
@@ -344,15 +371,15 @@ async def get_file(file_id: str):
         oid = ObjectId(file_id)
         meta = await db["files"].find_one({"_id": oid})
         if not meta:
-            logger.error(f"❌ [FastAPI] Fichier {file_id} introuvable dans 'files'")
+            logger.error(f"[FastAPI] Fichier {file_id} introuvable dans 'files'")
             raise HTTPException(status_code=404, detail="Fichier introuvable")
 
         stream = BytesIO()
         await fs.download_to_stream(oid, stream)
         stream.seek(0)
 
-        logger.info(f"📤 [FastAPI] Fichier envoyé : {meta['filename']} ({meta['content_type']})")
-        logger.info(f"🔗 [FastAPI] URL générée : http://{APP_HOST}:{APP_PORT}/file/{file_id}")
+        logger.info(f"[FastAPI] Fichier envoyé : {meta['filename']} ({meta['content_type']})")
+        logger.info(f"[FastAPI] URL générée : http://{APP_HOST}:{APP_PORT}/file/{file_id}")
 
         return StreamingResponse(
             stream,
@@ -365,7 +392,7 @@ async def get_file(file_id: str):
 
 
     except Exception as e:
-        logger.error(f"❌ [FastAPI] Erreur téléchargement : {e}", exc_info=True)
+        logger.error(f"[FastAPI] Erreur téléchargement : {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erreur téléchargement : {str(e)}")
 
 
@@ -391,14 +418,14 @@ async def log_requests(request: Request, call_next):
     try:
         body = await request.body()
         body_str = body.decode("utf-8", errors="ignore")[:200]
-        logger.info(f"📥 [{idem}] {request.method} {request.url} body={body_str}")
+        logger.info(f"[{idem}] {request.method} {request.url} body={body_str}")
         start = time.time()
         response = await call_next(request)
         duration = (time.time() - start) * 1000
-        logger.info(f"📤 [{idem}] Done in {duration:.2f}ms [{response.status_code}]")
+        logger.info(f"[{idem}] Done in {duration:.2f}ms [{response.status_code}]")
         return response
     except Exception as e:
-        logger.error(f"❌ [{idem}] Exception: {str(e)}", exc_info=True)
+        logger.error(f"[{idem}] Exception: {str(e)}", exc_info=True)
         raise
 
 
@@ -412,25 +439,25 @@ async def upload_audio(audio: UploadFile = File(...)):
     envoie le texte au LLM puis génère une réponse audio (TTS).
     """
     try:
-        # 1️⃣ Sauvegarde du fichier
+        # Sauvegarde du fichier
         timestamp = int(time.time())
         filename = f"{timestamp}_{audio.filename}"
         file_path = os.path.join(UPLOAD_DIR, filename)
         with open(file_path, "wb") as f:
             f.write(await audio.read())
-        logger.info(f"✅ Fichier reçu : {file_path}")
+        logger.info(f"Fichier reçu : {file_path}")
 
-        # 2️⃣ STT
+        # STT
         stt_model = WhisperModel("base", device="cpu", compute_type="int8")
         segments, _ = stt_model.transcribe(file_path)
         recognized_text = " ".join([s.text for s in segments]).strip()
-        logger.info(f"🧠 Texte reconnu : {recognized_text}")
+        logger.info(f"Texte reconnu : {recognized_text}")
 
-        # 3️⃣ LLM
+        # LLM
         response_text = query_ollama_voice_agent(recognized_text)
-        logger.info(f"🤖 Réponse LLM : {response_text}")
+        logger.info(f" Réponse LLM : {response_text}")
 
-        # 4️⃣ TTS
+        # TTS
         pipeline = KPipeline(lang_code='a')
         generator = pipeline(response_text, voice='af_sarah')
         output_filename = f"response_{timestamp}.wav"
@@ -438,9 +465,9 @@ async def upload_audio(audio: UploadFile = File(...)):
         with sf.SoundFile(output_path, mode='w', samplerate=24000, channels=1) as wfile:
             for _, _, audio_chunk in generator:
                 wfile.write(audio_chunk)
-        logger.info(f"✅ Fichier TTS généré : {output_path}")
+        logger.info(f"Fichier TTS généré : {output_path}")
 
-        # 5️⃣ Retour
+        # Retour
         audio_url = f"http://{APP_HOST}:{APP_PORT}/static/audio/{output_filename}"
         return JSONResponse(content={
             "status": "success",
@@ -450,7 +477,7 @@ async def upload_audio(audio: UploadFile = File(...)):
         })
 
     except Exception as e:
-        logger.error(f"❌ Erreur /upload-audio : {e}", exc_info=True)
+        logger.error(f"Erreur /upload-audio : {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -462,9 +489,46 @@ async def response_audio(filename: str):
     try:
         file_path = os.path.join(RESPONSE_DIR, filename)
         if os.path.exists(file_path):
-            logger.info(f"🎧 Envoi du fichier audio : {file_path}")
+            logger.info(f"Envoi du fichier audio : {file_path}")
             return FileResponse(file_path, media_type="audio/wav", filename=filename)
         return JSONResponse(content={"status": "error", "message": "Fichier introuvable"}, status_code=404)
     except Exception as e:
-        logger.error(f"❌ Erreur /response-audio : {e}", exc_info=True)
+        logger.error(f"Erreur /response-audio : {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+    
+
+# ======================================================
+# ----------------- souvenir ------------------
+# ======================================================
+
+async def update_conversation_memory(conversation_id, new_user_message, new_assistant_message):
+    doc = await db.conversation_memory.find_one({"_id": conversation_id})
+
+    new_entries = [
+        {"role": "user", "content": new_user_message},
+        {"role": "assistant", "content": new_assistant_message}
+    ]
+
+    if doc:
+        messages = doc["messages"] + new_entries
+        messages = messages[-6:]  # <-- garde seulement les 3 derniers échanges
+
+        await db.conversation_memory.update_one(
+            {"_id": conversation_id},
+            {"$set": {"messages": messages, "updatedAt": datetime.utcnow()}}
+        )
+    else:
+        await db.conversation_memory.insert_one({
+            "_id": conversation_id,
+            "messages": new_entries,
+            "updatedAt": datetime.utcnow()
+        })
+
+async def get_memory_context(conversation_id):
+    doc = await db.conversation_memory.find_one({"_id": conversation_id})
+    if not doc:
+        return ""
+    
+    # convertir en texte utilisable par le prompt
+    context = "\n".join([f"{m['role']}: {m['content']}" for m in doc["messages"]])
+    return context

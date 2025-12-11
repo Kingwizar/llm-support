@@ -4,7 +4,7 @@ from typing import List, Dict, Any
 
 
 # ===============================
-# 🔵 SYSTEM PROMPT POUR AGENT 3D
+#  SYSTEM PROMPT POUR AGENT 3D
 # ===============================
 SYSTEM_AVATAR = """
 # System: Real-Time 3D Conversational Avatar
@@ -23,7 +23,7 @@ BEHAVIOR RULES:
 """
 
 # ===============================
-# 🔧 TEMPLATE RUNTIME
+#  TEMPLATE RUNTIME
 # ===============================
 RUNTIME_TEMPLATE = """
 [SYSTEM]
@@ -47,7 +47,7 @@ RUNTIME_TEMPLATE = """
 
 
 # ===============================
-# 🧠 Mémoire persistante et intégrée
+#  Mémoire persistante et intégrée
 # ===============================
 conversation_summary = ""
 conversation_history = []  # [{'role':'user','text':...}, {'role':'agent','text':...}]
@@ -74,7 +74,7 @@ def _summarize(text: str, summarizer_llm):
 
 
 # ===============================
-# 🏗️ BUILDERS (modifié avec mémoire)
+#  BUILDERS (modifié avec mémoire)
 # ===============================
 
 def build_voice_agent_prompt(message: str, summarizer_llm=None) -> str:

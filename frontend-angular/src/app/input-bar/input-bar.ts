@@ -31,9 +31,9 @@ export class InputBar {
 
   /** Émet le message vers le parent sans contact API */
   sendMessage() {
-    console.log("🟢 InputBar → emit vers ChatPanel");
-    console.log("➡️ Texte:", this.prompt);
-    console.log("➡️ Fichiers:", this.selectedFiles.length);
+    console.log("InputBar → emit vers ChatPanel");
+    console.log("Texte:", this.prompt);
+    console.log("Fichiers:", this.selectedFiles.length);
 
     if (!this.prompt.trim() && this.selectedFiles.length === 0) return;
 

@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { BehaviorSubject, Observable } from 'rxjs';
+import { BehaviorSubject, catchError, map, Observable, of } from 'rxjs';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
 
@@ -7,6 +7,8 @@ import { environment } from '../../../environments/environment';
 export class HistoryService {
   /** URL du backend Node (proxy vers FastAPI) — ex : http://127.0.0.1:3000 */
   private baseUrl = environment.serverUrl;
+  private tempConversationId: string | null = null;
+
 
   private activeConversation = new BehaviorSubject<any | null>(null);
   activeConversation$ = this.activeConversation.asObservable();
@@ -40,6 +42,34 @@ export class HistoryService {
 
   /** 🔹 Définit la conversation active */
   setActiveConversation(convo: any) {
-    this.activeConversation.next(convo);
+      this.activeConversation.next(convo);
+    }
+
+    setTempConversation(id: string) {
+    this.tempConversationId = id;
   }
+
+  clearTempConversation() {
+    this.tempConversationId = null;
+  }
+
+  getTempConversation(): string | null {
+    return this.tempConversationId;
+  }
+
+  isTempConversationEmpty(): Observable<boolean> {
+  if (!this.tempConversationId) {
+    return of(false);
+  }
+
+  // Appeler la base pour vérifier s'il y a des messages
+  return this.getMessages(this.tempConversationId).pipe(
+    map((messages: any[]) => messages.length === 0),
+    catchError(() => of(true)) // en cas d'erreur, on considère que c'est vide
+  );
+}
+
+  
+
+
 }

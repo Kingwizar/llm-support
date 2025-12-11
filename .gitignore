@@ -1,5 +1,5 @@
 # =========================
-# 🧠 ENVIRONNEMENTS & SECRETS
+# ENVIRONNEMENTS & SECRETS
 # =========================
 .env
 *.env
@@ -8,7 +8,7 @@
 !frontend-angular/src/environments/environment*.ts  # On garde les fichiers Angular générés s'ils sont publics
 
 # =========================
-# 🐍 PYTHON / FASTAPI
+# PYTHON / FASTAPI
 # =========================
 venv/
 backend/venv/
@@ -19,7 +19,7 @@ __pycache__/
 *.pkl
 
 # =========================
-# 🟢 NODE / EXPRESS / ANGULAR
+# NODE / EXPRESS / ANGULAR
 # =========================
 node_modules/
 dist/
@@ -40,7 +40,7 @@ pnpm-lock.yaml
 # (optionnel : si tu veux éviter de commiter tes lockfiles — sinon garde-les)
 
 # =========================
-# 🧱 BUILD & CACHE
+# BUILD & CACHE
 # =========================
 .cache/
 .tmp/
@@ -48,14 +48,14 @@ coverage/
 *.log
 
 # =========================
-# 💻 IDE / ÉDITEURS
+# IDE / ÉDITEURS
 # =========================
 .vscode/
 .idea/
 *.swp
 
 # =========================
-# 🧩 SYSTÈME
+# SYSTÈME
 # =========================
 .DS_Store
 Thumbs.db

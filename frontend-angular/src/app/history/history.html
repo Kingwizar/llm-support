@@ -21,7 +21,12 @@
 
   <!-- Barre d'ajout fixée en bas -->
   <div class="add-convo">
-    <input [(ngModel)]="newConversationName" placeholder="Nom de la nouvelle conversation" />
+    <input
+      [(ngModel)]="newConversationName"
+      placeholder="Nom de la nouvelle conversation"
+      (keyup.enter)="onEnterCreateConversation()"
+    />
+
     <button (click)="createConversation()">➕ Ajouter</button>
   </div>
 </div>
