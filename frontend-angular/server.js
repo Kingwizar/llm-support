@@ -162,7 +162,7 @@ app.post("/api/chat", async (req, res) => {
 });
 
 // ================== START SERVER ==================
-app.listen(PORT, () => {
-  console.log(`Express running → http://127.0.0.1:${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Express running → http://0.0.0.0:${PORT}`);
   console.log(`Connected FastAPI → ${FASTAPI_URL}`);
 });
