@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 import os, time, logging
 from io import BytesIO
 import soundfile as sf
-
+import time
 # === Modules IA ===
 from faster_whisper import WhisperModel
 from kokoro import KPipeline
@@ -293,31 +293,48 @@ async def send_message(
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
+    timers = {}
+    t0 = time.time()
+
     try:
         logger.info(f"Requête RAG : {req.question}")
 
-        # 1️⃣ Récupération du contexte RAG
+        # 1️⃣ RAG préparation
+        t_rag_start = time.time()
         pack = answer_with_rag_or_web(req.question) or {}
+        t_rag_end = time.time()
+        timers["rag_total"] = t_rag_end - t_rag_start
+
         rag_prompt = pack.get("prompt", "")
         sources_block = pack.get("sources_block", "")
 
-        # 2️⃣ Récupération de la mémoire de conversation
+        # 2️⃣ Mémoire conversation
+        t_mem_start = time.time()
         memory_context = ""
         if req.conv_id:
             memory_context = await get_memory_context(req.conv_id)
+        t_mem_end = time.time()
+        timers["memory_fetch"] = t_mem_end - t_mem_start
 
-        # 3️⃣ Construction du prompt final avec mémoire + RAG
+        # 3️⃣ Build prompt final
+        t_build_start = time.time()
         prompt = build_runtime_prompt_with_memory(
             question=req.question,
             hits=pack.get("hits", []),
             sources_block=sources_block,
             memory_context=memory_context
         )
+        t_build_end = time.time()
+        timers["prompt_build"] = t_build_end - t_build_start
 
-        # 4️⃣ Appel du modèle Ollama
+        # 4️⃣ Appel LLM
+        t_llm_start = time.time()
         ollama_answer = query_ollama(prompt, model_name="qwen14b_llm")
+        t_llm_end = time.time()
+        timers["ollama"] = t_llm_end - t_llm_start
 
-        # 5️⃣ Sauvegarde message bot dans la conversation
+        # 5️⃣ Sauvegarde Mongo du message bot
+        t_mongo_save_start = time.time()
         if req.conv_id:
             await conversations.update_one(
                 {"_id": ObjectId(req.conv_id)},
@@ -328,16 +345,22 @@ async def chat(req: ChatRequest):
                     "uploaded_at": datetime.utcnow()
                 }}}
             )
+        t_mongo_save_end = time.time()
+        timers["mongo_save_message"] = t_mongo_save_end - t_mongo_save_start
 
-        # 6️⃣ Mise à jour de la mémoire (3 derniers échanges)
+        # 6️⃣ Mise à jour mémoire conversation
+        t_mem_update_start = time.time()
         if req.conv_id:
             await update_conversation_memory(
                 req.conv_id,
                 new_user_message=req.question,
                 new_assistant_message=ollama_answer
             )
+        t_mem_update_end = time.time()
+        timers["memory_update"] = t_mem_update_end - t_mem_update_start
 
-        # 7️⃣ Construction de la réponse
+        # 7️⃣ Construction réponse
+        t_response_start = time.time()
         summary = ollama_answer.split("\n")[0][:300] if ollama_answer else "Aucune réponse."
         steps = [line.strip() for line in ollama_answer.split("\n") if line.strip()]
         citations = [
@@ -348,6 +371,16 @@ async def chat(req: ChatRequest):
             }
             for c in pack.get("citations", [])
         ]
+        t_response_end = time.time()
+        timers["response_build"] = t_response_end - t_response_start
+
+        # Temps total
+        timers["total"] = time.time() - t0
+
+        logger.warning("\n===== PROFILING /chat =====")
+        for k, v in timers.items():
+            logger.warning(f"{k:<25} : {v*1000:.2f} ms")
+        logger.warning("=================================\n")
 
         return ChatResponse(
             summary=summary,
@@ -359,7 +392,6 @@ async def chat(req: ChatRequest):
     except Exception as e:
         logger.error(f"Erreur /chat : {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-
 
 # ======================================================
 # ----------------- ROUTE FICHIERS ---------------------
