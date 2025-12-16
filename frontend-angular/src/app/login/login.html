@@ -1,0 +1,16 @@
+<div class="auth-container">
+  <h2>Connexion</h2>
+
+  <input type="email" [(ngModel)]="email" placeholder="Email" />
+  <input type="password" [(ngModel)]="password" placeholder="Mot de passe" />
+
+  <button (click)="login()">Se connecter</button>
+
+  <p class="error" *ngIf="error">{{ error }}</p>
+
+  <p class="register-link">
+  Pas encore de compte ?
+  <a routerLink="/register">Créer un compte</a>
+</p>
+
+</div>

@@ -1,0 +1,189 @@
+/* ===============================
+   AUTH CONTAINER
+================================ */
+
+.auth-container {
+  max-width: 340px;
+  margin: 120px auto;
+  padding: 26px 28px;
+
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+
+  background: linear-gradient(
+    145deg,
+    #3d3927,
+    #141107
+  );
+
+  border-radius: 16px;
+  border: 1px solid rgba(255, 216, 59, 0.25);
+
+  box-shadow:
+    0 14px 40px rgba(0, 0, 0, 0.55),
+    inset 0 1px 1px rgba(255, 255, 255, 0.04);
+}
+
+/* ===============================
+   TITRE
+================================ */
+
+.auth-container h2 {
+  margin-bottom: 10px;
+  text-align: center;
+
+  color: #FFD83B;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+}
+
+/* ===============================
+   INPUTS
+================================ */
+
+.auth-container input {
+  padding: 10px 12px;
+  font-size: 14px;
+
+  color: #FDFBF5;
+  background-color: #0F0E0A;
+
+  border-radius: 10px;
+  border: 1px solid rgba(255, 216, 59, 0.25);
+
+  outline: none;
+  transition:
+    border-color 0.25s ease,
+    box-shadow 0.25s ease,
+    background-color 0.25s ease;
+}
+
+.auth-container input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.auth-container input:focus {
+  background-color: #14120D;
+  border-color: #FFD83B;
+
+  box-shadow:
+    0 0 0 2px rgba(255, 216, 59, 0.35),
+    inset 0 1px 1px rgba(255, 255, 255, 0.08);
+}
+
+/* ===============================
+   BOUTON PRINCIPAL
+================================ */
+
+.auth-container button {
+  margin-top: 6px;
+  padding: 11px 0;
+
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+
+  color: #1E1C14;
+  background: linear-gradient(
+    135deg,
+    #FFD83B,
+    #FFE55C,
+    #E8C602
+  );
+
+  border: none;
+  border-radius: 24px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+
+  box-shadow:
+    0 6px 18px rgba(232, 198, 2, 0.45),
+    inset 0 1px 1px rgba(255, 255, 255, 0.65);
+
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease,
+    background-position 0.4s ease;
+}
+
+/* effet lumineux */
+.auth-container button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+
+  background: linear-gradient(
+    120deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.6),
+    transparent 70%
+  );
+
+  opacity: 0;
+  transform: translateX(-100%);
+  transition: transform 0.5s ease, opacity 0.3s ease;
+}
+
+.auth-container button:hover {
+  transform: translateY(-2px) scale(1.03);
+
+  box-shadow:
+    0 10px 26px rgba(232, 198, 2, 0.65),
+    inset 0 1px 1px rgba(255, 255, 255, 0.75);
+}
+
+.auth-container button:hover::before {
+  opacity: 1;
+  transform: translateX(100%);
+}
+
+.auth-container button:active {
+  transform: scale(0.96);
+}
+
+/* ===============================
+   LIENS
+================================ */
+
+.auth-container p {
+  margin-top: 6px;
+  text-align: center;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.auth-container a {
+  color: #FFD83B;
+  font-weight: 600;
+  text-decoration: none;
+  position: relative;
+}
+
+.auth-container a::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -2px;
+  width: 0%;
+  height: 2px;
+  background-color: #FFD83B;
+  transition: width 0.3s ease;
+}
+
+.auth-container a:hover::after {
+  width: 100%;
+}
+
+/* ===============================
+   ERREUR
+================================ */
+
+.error {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #FF5A5A;
+  text-align: center;
+}

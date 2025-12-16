@@ -1,6 +1,6 @@
 // ================== IMPORTS (CommonJS) ==================
-const express = require('express');
-const cors = require('cors');
+const express = require("express");
+const cors = require("cors");
 const dotenv = require("dotenv");
 const path = require("path");
 const axios = require("axios");
@@ -20,11 +20,19 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Express init
+// ================== EXPRESS INIT ==================
 const app = express();
-const PORT = process.env.APP_PORT;
+const PORT = process.env.APP_PORT || 3000;
 const FASTAPI_URL = process.env.FASTAPI_URL;
-const CORS_ORIGINS = process.env.CORS_ORIGINS?.split(",") || ["http://localhost:4200"];
+
+if (!FASTAPI_URL) {
+  console.error("❌ FASTAPI_URL is missing in .env");
+  process.exit(1);
+}
+
+const CORS_ORIGINS = process.env.CORS_ORIGINS?.split(",") || [
+  "http://localhost:4200",
+];
 
 app.use(express.json());
 app.use(
@@ -35,129 +43,193 @@ app.use(
   })
 );
 
-// Logger
+// ================== LOGGER ==================
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`);
   next();
 });
 
-// ================== ROUTES ==================
+// ================== AUTH HEADER FORWARD ==================
+app.use((req, res, next) => {
+  req.authHeader = req.headers.authorization || "";
+  next();
+});
 
-// 1. Récupérer toutes les conversations
+// ================== HELPERS ==================
+function authHeaders(req, extra = {}) {
+  // Ne pas envoyer Authorization vide (certains serveurs n'aiment pas)
+  const h = { ...extra };
+  if (req.authHeader) h.Authorization = req.authHeader;
+  return h;
+}
+
+function sendAxiosError(res, err, fallbackStatus = 500, fallbackMsg = "Proxy error") {
+  const status = err?.response?.status || fallbackStatus;
+  const data = err?.response?.data;
+
+  // renvoyer l'erreur FastAPI si possible
+  if (data) return res.status(status).json(data);
+
+  return res.status(status).json({ error: fallbackMsg });
+}
+
+// ================== AUTH ROUTES ==================
+app.post("/auth/login", async (req, res) => {
+  try {
+    const r = await axios.post(`${FASTAPI_URL}/auth/login`, req.body);
+    res.json(r.data);
+  } catch (err) {
+    sendAxiosError(res, err, 401, "Login failed");
+  }
+});
+
+app.post("/auth/register", async (req, res) => {
+  try {
+    const r = await axios.post(`${FASTAPI_URL}/auth/register`, req.body);
+    res.json(r.data);
+  } catch (err) {
+    sendAxiosError(res, err, 400, "Register failed");
+  }
+});
+
+app.get("/auth/me", async (req, res) => {
+  try {
+    const r = await axios.get(`${FASTAPI_URL}/auth/me`, {
+      headers: authHeaders(req),
+    });
+    res.json(r.data);
+  } catch (err) {
+    sendAxiosError(res, err, 401, "Unauthorized");
+  }
+});
+
+// ================== CONVERSATIONS ==================
 app.get("/conversations", async (req, res) => {
   try {
-    const response = await axios.get(`${FASTAPI_URL}/conversations`);
-    res.json(response.data);
+    const r = await axios.get(`${FASTAPI_URL}/conversations`, {
+      headers: authHeaders(req),
+    });
+    res.json(r.data);
   } catch (err) {
-    console.error("Erreur conversations:", err.message);
-    res.status(500).json({ error: "Erreur Express → FastAPI" });
+    sendAxiosError(res, err, 401, "Unauthorized");
   }
 });
 
-// 2. Nouvelle conversation
 app.post("/conversations", async (req, res) => {
   try {
-    const response = await axios.post(`${FASTAPI_URL}/conversations`, req.body);
-    res.json(response.data);
+    const r = await axios.post(`${FASTAPI_URL}/conversations`, req.body, {
+      headers: authHeaders(req),
+    });
+    res.json(r.data);
   } catch (err) {
-    console.error("Erreur création:", err.message);
-    res.status(500).json({ error: "Erreur création conversation." });
+    sendAxiosError(res, err, 401, "Unauthorized");
   }
 });
 
-// Messages
+// Renommage (ton Angular appelle /api/chat/messages/:id)
+app.put("/api/chat/messages/:id", async (req, res) => {
+  try {
+    const r = await axios.put(
+      `${FASTAPI_URL}/conversations/${req.params.id}`,
+      { title: req.body.title },
+      { headers: authHeaders(req) }
+    );
+    res.json(r.data);
+  } catch (err) {
+    sendAxiosError(res, err, 400, "Rename failed");
+  }
+});
+
+// Suppression (ton Angular appelle /api/chat/messages/:id)
+app.delete("/api/chat/messages/:id", async (req, res) => {
+  try {
+    const r = await axios.delete(`${FASTAPI_URL}/conversations/${req.params.id}`, {
+      headers: authHeaders(req),
+    });
+    res.json(r.data || { success: true });
+  } catch (err) {
+    sendAxiosError(res, err, 400, "Delete failed");
+  }
+});
+
+// ✅ IMPORTANT: on SUPPRIME la route doublon suivante:
+// app.delete("/conversations/:id", ...)  <-- elle faisait doublon et pouvait créer des comportements bizarres
+
+// ================== MESSAGES ==================
 app.get("/api/chat/messages/:id", async (req, res) => {
   try {
-    const response = await axios.get(`${FASTAPI_URL}/conversations/${req.params.id}/messages`);
-    res.json(response.data);
+    const r = await axios.get(
+      `${FASTAPI_URL}/conversations/${req.params.id}/messages`,
+      { headers: authHeaders(req) }
+    );
+    res.json(r.data);
   } catch (err) {
-    console.error("Erreur messages:", err.message);
-    res.status(500).json({ error: "Erreur proxy messages" });
-  }
-});
-// Télécharger un fichier depuis FastAPI via proxy Express
-app.get("/api/chat/file/:id", async (req, res) => {
-  const fileId = req.params.id;
-
-  try {
-    const url = `${FASTAPI_URL}/file/${fileId}`;
-    console.log("Proxy téléchargement →", url);
-
-    const response = await axios({
-      url,
-      method: "GET",
-      responseType: "stream"
-    });
-
-    res.setHeader("Content-Type", response.headers["content-type"]);
-    res.setHeader("Content-Disposition", response.headers["content-disposition"] || "attachment");
-
-    response.data.pipe(res);
-
-  } catch (err) {
-    console.error("Erreur proxy fichier:", err.message);
-    res.status(500).json({ error: "Impossible de récupérer le fichier." });
+    sendAxiosError(res, err, 401, "Unauthorized");
   }
 });
 
-
-// Message + fichiers
 app.post("/api/chat/message/:id", upload.array("files"), async (req, res) => {
+  const uploaded = Array.isArray(req.files) ? req.files : [];
+
   try {
     const formData = new FormData();
     formData.append("text", req.body.text || "");
 
-    if (Array.isArray(req.files)) {
-      for (const f of req.files) {
-        formData.append("files", fs.readFileSync(f.path), {
-          filename: f.originalname,
-          contentType: f.mimetype,
-        });
-      }
+    for (const f of uploaded) {
+      formData.append("files", fs.readFileSync(f.path), {
+        filename: f.originalname,
+        contentType: f.mimetype,
+      });
     }
 
-    const response = await axios.post(
-      `${FASTAPI_URL}/message/${req.params.id}`,
-      formData,
-      { headers: formData.getHeaders() }
-    );
-
-    res.json(response.data);
-  } catch (err) {
-    console.error("Erreur message:", err.message);
-    res.status(500).json({ error: "Erreur envoi message." });
-  }
-});
-
-// Renommage
-app.put("/api/chat/messages/:id", async (req, res) => {
-  try {
-    const response = await axios.put(`${FASTAPI_URL}/conversations/${req.params.id}`, {
-      title: req.body.title,
+    const r = await axios.post(`${FASTAPI_URL}/message/${req.params.id}`, formData, {
+      headers: authHeaders(req, formData.getHeaders()),
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
     });
-    res.json(response.data);
+
+    res.json(r.data);
   } catch (err) {
-    res.status(500).json({ error: "Erreur renommage conversation" });
+    sendAxiosError(res, err, 500, "Message send failed");
+  } finally {
+    // ✅ Nettoyage des fichiers temporaires
+    for (const f of uploaded) {
+      try { fs.unlinkSync(f.path); } catch (_) {}
+    }
   }
 });
 
-// Suppression conversation
-app.delete("/api/chat/messages/:id", async (req, res) => {
-  try {
-    await axios.delete(`${FASTAPI_URL}/conversations/${req.params.id}`);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: "Erreur suppression conversation" });
-  }
-});
-
-// Chat RAG
+// ================== CHAT RAG ==================
 app.post("/api/chat", async (req, res) => {
   try {
-    const response = await axios.post(`${FASTAPI_URL}/chat`, req.body);
-    res.json(response.data);
+    const r = await axios.post(`${FASTAPI_URL}/chat`, req.body, {
+      headers: authHeaders(req),
+    });
+    res.json(r.data);
   } catch (err) {
-    res.status(500).json({ error: "Erreur RAG FastAPI." });
+    sendAxiosError(res, err, 401, "Unauthorized");
+  }
+});
+
+// ================== FILE DOWNLOAD ==================
+app.get("/api/chat/file/:id", async (req, res) => {
+  try {
+    const r = await axios({
+      url: `${FASTAPI_URL}/file/${req.params.id}`,
+      method: "GET",
+      responseType: "stream",
+      headers: authHeaders(req),
+    });
+
+    res.setHeader("Content-Type", r.headers["content-type"] || "application/octet-stream");
+    res.setHeader(
+      "Content-Disposition",
+      r.headers["content-disposition"] || "attachment"
+    );
+
+    r.data.pipe(res);
+  } catch (err) {
+    sendAxiosError(res, err, 500, "File download failed");
   }
 });
 

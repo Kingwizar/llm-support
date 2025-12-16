@@ -148,3 +148,28 @@
   flex: 1;
   min-width: 200px;
 }
+/* ===============================
+   🌿 BACKGROUND GLOBAL SOFT
+================================ */
+
+.main-page {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+
+  /* Couleur douce, claire, non blanche */
+  background: #F3EFE2; /* ivory doux */
+}
+
+.content {
+  flex: 1;
+  display: flex;
+
+  /* Très léger olive chaud */
+  background: linear-gradient(
+    90deg,
+    #F1EEDC 0%,
+    #F3EFE2 50%,
+    #F1EEDC 100%
+  );
+}

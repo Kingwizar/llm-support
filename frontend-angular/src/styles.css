@@ -1,15 +1,66 @@
 /* You can add global styles to this file, and also import other style files */
 /* Supprimer marges par défaut */
 html, body {
-  margin: 0;
-  padding: 0;
   height: 100%;
-  font-family: Arial, sans-serif;
 }
 
-/* Racine Angular */
-app-root {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
+body {
+  margin: 0;
+  font-family: 'Segoe UI', sans-serif;
+
+  background: linear-gradient(
+    135deg,
+    #1E1F17,
+    #1A1B14,
+    #15160F
+  );
+
+  overflow: hidden;
+  position: relative;
+}
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  top: -50%;
+  left: -150%;
+  width: 300%;
+  height: 200%;
+
+  background-repeat: no-repeat;
+  pointer-events: none;
+  z-index: -1;
+}
+body::before {
+  background-image: linear-gradient(
+    115deg,
+    transparent 45%,
+    rgba(255, 216, 59, 0.12),
+    rgba(255, 229, 92, 0.18),
+    rgba(255, 216, 59, 0.12),
+    transparent 55%
+  );
+
+  animation: diagonalSweep 14s linear infinite;
+}
+body::after {
+  background-image: linear-gradient(
+    115deg,
+    transparent 48%,
+    rgba(255, 216, 59, 0.08),
+    rgba(255, 229, 92, 0.14),
+    rgba(255, 216, 59, 0.08),
+    transparent 52%
+  );
+
+  animation: diagonalSweep 18s linear infinite;
+  animation-delay: 6s;
+}
+@keyframes diagonalSweep {
+  0% {
+    transform: translateX(100%) translateY(0);
+  }
+  100% {
+    transform: translateX(-100%) translateY(0);
+  }
 }

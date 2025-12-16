@@ -1,17 +1,20 @@
-from fastapi import FastAPI, Request, HTTPException, File, UploadFile, Form
+from fastapi import FastAPI, Request, HTTPException, File, UploadFile, Form, Depends
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from fastapi.security import OAuth2PasswordBearer
+from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 from bson import ObjectId
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
-import os, time, logging
+from jose import jwt, JWTError
+from passlib.context import CryptContext
 from io import BytesIO
+import os, time, logging
 import soundfile as sf
-import time
+
 # === Modules IA ===
 from faster_whisper import WhisperModel
 from kokoro import KPipeline
@@ -24,7 +27,6 @@ from llm.prompt_builder import (
     build_prompt_from_extracted_file,
     build_runtime_prompt_with_memory
 )
-
 from ingest.file_ingest import extract_text_from_file
 from ingest.web_search import simple_web_search
 
@@ -43,17 +45,27 @@ CORS_ORIGINS = os.getenv("CORS_ORIGINS", "").split(",")
 
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL")
 
+JWT_SECRET = os.getenv("JWT_SECRET", "CHANGE_ME")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_HOURS = 24
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+
 app = FastAPI(title="LLM Chat API")
 logger = logging.getLogger("uvicorn.error")
 
-# Dossiers statiques
+
+# ======================================================
+# ----------------- STATIC + CORS ----------------------
+# ======================================================
 UPLOAD_DIR = "uploads"
 RESPONSE_DIR = "static/audio"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(RESPONSE_DIR, exist_ok=True)
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS if CORS_ORIGINS != [""] else ["*"],
@@ -64,18 +76,38 @@ app.add_middleware(
 
 
 # ======================================================
-# ----------------- MONGO CONNEXION --------------------
+# ----------------- MONGO ------------------------------
 # ======================================================
 client = AsyncIOMotorClient(MONGO_URI)
 db = client[MONGO_DB]
 conversations = db["conversations"]
 conversation_memory = db["conversation_memory"]
 fs = AsyncIOMotorGridFSBucket(db)
-logger.info(f" MongoDB connecté à {MONGO_URI}/{MONGO_DB}")
+
+logger.info(f"MongoDB connecté à {MONGO_URI}/{MONGO_DB}")
+
 
 # ======================================================
 # ----------------- MODELS -----------------------------
 # ======================================================
+class UserRegister(BaseModel):
+    username: str
+    email: EmailStr
+    password: str
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+class UserOut(BaseModel):
+    id: str
+    username: str
+    email: EmailStr
+    role: str
+    created_at: datetime
+
+class ConversationCreate(BaseModel):
+    title: str
 
 class ChatRequest(BaseModel):
     question: str
@@ -92,36 +124,106 @@ class ChatResponse(BaseModel):
     citations: List[Citation]
     conversation_id: str
 
-class ConversationCreate(BaseModel):
-    title: str
 
 # ======================================================
-# ----------------- HELPERS ----------------------------
+# ----------------- AUTH HELPERS -----------------------
 # ======================================================
+def hash_password(password: str) -> str:
+    if len(password.encode("utf-8")) > 72:
+        raise HTTPException(
+            status_code=400,
+            detail="Le mot de passe est trop long (max 72 caractères)"
+        )
+    return pwd_context.hash(password)
 
+
+def verify_password(password: str, hashed: str) -> bool:
+    return pwd_context.verify(password, hashed)
+
+def create_access_token(data: dict) -> str:
+    payload = data.copy()
+    payload["exp"] = datetime.utcnow() + timedelta(hours=JWT_EXPIRE_HOURS)
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+def decode_token(token: str) -> dict:
+    return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    try:
+        payload = decode_token(token)
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Token invalide")
+
+        user = await db["users"].find_one({"_id": ObjectId(user_id)})
+        if not user:
+            raise HTTPException(status_code=401, detail="Utilisateur introuvable")
+
+        user["_id"] = str(user["_id"])
+        return user
+
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Token invalide")
+
+
+# ======================================================
+# ----------------- AUTH ROUTES ------------------------
+# ======================================================
+@app.post("/auth/register")
+async def register(user: UserRegister):
+    if await db["users"].find_one({"email": user.email}):
+        raise HTTPException(status_code=400, detail="Email déjà utilisé")
+
+    doc = {
+        "username": user.username,
+        "email": user.email,
+        "password": hash_password(user.password),
+        "role": "user",
+        "created_at": datetime.utcnow()
+    }
+
+    result = await db["users"].insert_one(doc)
+    print(user)
+    return {"success": True, "user_id": str(result.inserted_id)}
+
+@app.post("/auth/login")
+async def login(data: UserLogin):
+    user = await db["users"].find_one({"email": data.email})
+    if not user or not verify_password(data.password, user["password"]):
+        raise HTTPException(status_code=401, detail="Identifiants invalides")
+
+    token = create_access_token({
+        "sub": str(user["_id"]),
+        "role": user["role"]
+    })
+
+    return {"access_token": token, "token_type": "bearer"}
+
+@app.get("/auth/me", response_model=UserOut)
+async def me(user=Depends(get_current_user)):
+    return UserOut(
+        id=user["_id"],
+        username=user["username"],
+        email=user["email"],
+        role=user["role"],
+        created_at=user["created_at"]
+    )
+
+
+# ======================================================
+# ----------------- HELPERS CONVERSATION ---------------
+# ======================================================
 def clean_message(msg):
-    """Nettoie les ObjectId pour être JSON-safe"""
     return {
         "_id": str(msg.get("_id")) if msg.get("_id") else None,
         "role": msg.get("role"),
         "content": msg.get("content", ""),
         "isUser": msg.get("isUser", False),
         "uploaded_at": msg.get("uploaded_at").isoformat() if msg.get("uploaded_at") else None,
-        "files": [
-            {
-                "file_id": str(f.get("file_id")) if f.get("file_id") else None,
-                "file_name": f.get("file_name"),
-                "file_url": f.get("file_url"),
-                "content_type": f.get("content_type"),
-                "rag_context": f.get("rag_context"),
-                "uploaded_at": f.get("uploaded_at").isoformat() if f.get("uploaded_at") else None,
-            }
-            for f in msg.get("files", [])
-        ],
+        "files": msg.get("files", [])
     }
 
-def conv_helper(conv) -> dict:
-    """Convertit un document Mongo conversation → dict sérialisable"""
+def conv_helper(conv):
     return {
         "id": str(conv["_id"]),
         "title": conv.get("title", "(Sans titre)"),
@@ -129,430 +231,199 @@ def conv_helper(conv) -> dict:
     }
 
 def make_file_url(file_id: str) -> str:
-    """Construit l’URL de téléchargement visible par le front."""
     if PUBLIC_BASE_URL:
-        # p.ex. http://127.0.0.1:3000/api/chat/file/<id>
         return f"{PUBLIC_BASE_URL.rstrip('/')}/file/{file_id}"
-    # sinon, lien direct FastAPI
-    return f"http://192.168.213.110:{APP_PORT}/file/{file_id}"
+    return f"http://{APP_HOST}:{APP_PORT}/file/{file_id}"
+
 
 # ======================================================
 # ----------------- ROUTES CONVERSATIONS ---------------
 # ======================================================
-
 @app.get("/conversations")
-async def get_conversations():
-    try:
-        convs = await conversations.find().to_list(100)
-        return [conv_helper(c) for c in convs]
-    except Exception as e:
-        logger.error(f"Erreur get_conversations : {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/conversations/{conv_id}/messages")
-async def get_messages(conv_id: str):
-    try:
-        conv = await conversations.find_one({"_id": ObjectId(conv_id)})
-        if not conv:
-            raise HTTPException(status_code=404, detail="Conversation introuvable")
-        return [clean_message(m) for m in conv.get("messages", [])]
-    except Exception as e:
-        logger.error(f"Erreur get_messages : {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+async def get_conversations(user=Depends(get_current_user)):
+    convs = await conversations.find({"user_id": user["_id"]}).to_list(100)
+    return [conv_helper(c) for c in convs]
 
 @app.post("/conversations")
-async def create_conversation(data: ConversationCreate):
+async def create_conversation(data: ConversationCreate, user=Depends(get_current_user)):
     result = await conversations.insert_one({
+        "user_id": user["_id"],
         "title": data.title,
         "messages": [],
         "created_at": datetime.utcnow()
     })
-    new_conv = await conversations.find_one({"_id": result.inserted_id})
-    return conv_helper(new_conv)
-
-@app.put("/conversations/{conv_id}")
-async def rename_conversation(conv_id: str, data: dict):
-    new_title = data.get("title")
-    if not new_title:
-        raise HTTPException(status_code=400, detail="Titre manquant")
-    await conversations.update_one(
-        {"_id": ObjectId(conv_id)},
-        {"$set": {"title": new_title}}
-    )
-    conv = await conversations.find_one({"_id": ObjectId(conv_id)})
+    conv = await conversations.find_one({"_id": result.inserted_id})
     return conv_helper(conv)
-
-@app.delete("/conversations/{conv_id}")
-async def delete_conversation(conv_id: str):
-    result = await conversations.delete_one({"_id": ObjectId(conv_id)})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Conversation introuvable")
-    return {"success": True}
-
 
 
 # ======================================================
 # ----------------- ROUTE MESSAGE ----------------------
 # ======================================================
-
 @app.post("/message/{conv_id}")
 async def send_message(
     conv_id: str,
     text: str = Form(""),
-    files: List[UploadFile] = File(default=[])
+    files: List[UploadFile] = File(default=[]),
+    user=Depends(get_current_user)
 ):
-    """
-    Reçoit un message utilisateur (texte + fichiers).
-    Stocke chaque fichier dans GridFS, enregistre les métadonnées dans la collection 'files',
-    et ajoute un unique message à la conversation.
-    """
-    try:
-        saved_files = []
+    saved_files = []
 
-        for file in files:
-            data = await file.read()
-
-            # 1) Stockage binaire (GridFS)
-            file_id = await fs.upload_from_stream(
-                file.filename,
-                BytesIO(data),
-                metadata={
-                    "content_type": file.content_type,
-                    "size": len(data),
-                    "uploaded_at": datetime.utcnow().isoformat(),
-                },
-            )
-
-            # 2) (IMPORTANT) Métadonnées du fichier dans la collection 'files'
-            await db["files"].insert_one({
-                "_id": file_id,
-                "filename": file.filename,
-                "content_type": file.content_type,
-                "size": len(data),
-                "uploaded_at": datetime.utcnow(),
-                "conversation_id": conv_id,
-            })
-
-            # 3) Extraction + RAG (optionnelle)
-            tmp_path = f"/tmp/{file.filename}"
-            with open(tmp_path, "wb") as f:
-                f.write(data)
-
-            try:
-                extracted = extract_text_from_file(tmp_path)
-                file_prompt = build_prompt_from_extracted_file(extracted)
-                rag_data = answer_with_rag_or_web(file_prompt) or {}
-            except Exception as e:
-                rag_data = {}
-                logger.warning(f"Extraction RAG échouée pour {file.filename}: {e}")
-            finally:
-                try:
-                    os.remove(tmp_path)
-        
-                except FileNotFoundError:
-                    pass
-
-            saved_files.append({
-                "file_id": str(file_id),
-                "file_name": file.filename,
-                "file_url": make_file_url(str(file_id)),  # <= lien vers /file/<id>
-                "content_type": file.content_type,
-                "rag_context": rag_data.get("sources_block", ""),
-                "uploaded_at": datetime.utcnow()
-            })
-
-        # 4) Ajout d’un seul message côté conversation
-        message_doc = {
-            "role": "user",
-            "content": (text or "").strip(),
-            "isUser": True,
-            "files": saved_files,
+    for file in files:
+        data = await file.read()
+        file_id = await fs.upload_from_stream(file.filename, BytesIO(data))
+        await db["files"].insert_one({
+            "_id": file_id,
+            "filename": file.filename,
+            "conversation_id": conv_id,
             "uploaded_at": datetime.utcnow()
-        }
+        })
 
-        await conversations.update_one(
-            {"_id": ObjectId(conv_id)},
-            {"$push": {"messages": message_doc}}
-        )
+        saved_files.append({
+            "file_id": str(file_id),
+            "file_name": file.filename,
+            "file_url": make_file_url(str(file_id)),
+            "uploaded_at": datetime.utcnow()
+        })
 
-        logger.info(f"Message enregistré (texte + {len(saved_files)} fichiers) dans {conv_id}")
-        return {
-            "message": "Enregistré",
-            "files": saved_files,
-            "content": (text or "").strip(),
-            "conversation_id": conv_id
-        }
+    message_doc = {
+        "role": "user",
+        "content": text.strip(),
+        "isUser": True,
+        "files": saved_files,
+        "uploaded_at": datetime.utcnow()
+    }
+
+    await conversations.update_one(
+        {"_id": ObjectId(conv_id), "user_id": user["_id"]},
+        {"$push": {"messages": message_doc}}
+    )
+
+    return {"success": True}
+
+@app.get("/conversations/{conv_id}/messages")
+async def get_messages(conv_id: str):
+    try:
+        conv = await conversations.find_one({"_id": ObjectId(conv_id)})
+
+        if not conv:
+            # ⚠️ IMPORTANT : conversation inexistante → messages vides
+            return []
+
+        return [clean_message(m) for m in conv.get("messages", [])]
 
     except Exception as e:
-        logger.error(f"Erreur send_message : {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Erreur get_messages : {e}", exc_info=True)
+        return []
+
+@app.delete("/conversations/{conv_id}")
+async def delete_conversation(conv_id: str, user=Depends(get_current_user)):
+    result = await conversations.delete_one({
+        "_id": ObjectId(conv_id),
+        "user_id": user["_id"]
+    })
+
+    if result.deleted_count == 0:
+        # conversation inexistante → OK logique
+        return {"success": False}
+
+    return {"success": True}
+
 
 # ======================================================
 # ----------------- ROUTE CHAT (RAG) -------------------
 # ======================================================
-
 @app.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest):
-    timers = {}
-    t0 = time.time()
+async def chat(req: ChatRequest, user=Depends(get_current_user)):
+    pack = answer_with_rag_or_web(req.question) or {}
 
-    try:
-        logger.info(f"Requête RAG : {req.question}")
+    memory = await get_memory_context(req.conv_id) if req.conv_id else ""
+    prompt = build_runtime_prompt_with_memory(
+        question=req.question,
+        hits=pack.get("hits", []),
+        sources_block=pack.get("sources_block", ""),
+        memory_context=memory
+    )
 
-        # 1️⃣ RAG préparation
-        t_rag_start = time.time()
-        pack = answer_with_rag_or_web(req.question) or {}
-        t_rag_end = time.time()
-        timers["rag_total"] = t_rag_end - t_rag_start
+    answer = query_ollama(prompt, model_name="qwen14b_llm")
 
-        rag_prompt = pack.get("prompt", "")
-        sources_block = pack.get("sources_block", "")
-
-        # 2️⃣ Mémoire conversation
-        t_mem_start = time.time()
-        memory_context = ""
-        if req.conv_id:
-            memory_context = await get_memory_context(req.conv_id)
-        t_mem_end = time.time()
-        timers["memory_fetch"] = t_mem_end - t_mem_start
-
-        # 3️⃣ Build prompt final
-        t_build_start = time.time()
-        prompt = build_runtime_prompt_with_memory(
-            question=req.question,
-            hits=pack.get("hits", []),
-            sources_block=sources_block,
-            memory_context=memory_context
-        )
-        t_build_end = time.time()
-        timers["prompt_build"] = t_build_end - t_build_start
-
-        # 4️⃣ Appel LLM
-        t_llm_start = time.time()
-        ollama_answer = query_ollama(prompt, model_name="qwen14b_llm")
-        t_llm_end = time.time()
-        timers["ollama"] = t_llm_end - t_llm_start
-
-        # 5️⃣ Sauvegarde Mongo du message bot
-        t_mongo_save_start = time.time()
-        if req.conv_id:
-            await conversations.update_one(
-                {"_id": ObjectId(req.conv_id)},
-                {"$push": {"messages": {
-                    "role": "bot",
-                    "content": ollama_answer,
-                    "isUser": False,
-                    "uploaded_at": datetime.utcnow()
-                }}}
-            )
-        t_mongo_save_end = time.time()
-        timers["mongo_save_message"] = t_mongo_save_end - t_mongo_save_start
-
-        # 6️⃣ Mise à jour mémoire conversation
-        t_mem_update_start = time.time()
-        if req.conv_id:
-            await update_conversation_memory(
-                req.conv_id,
-                new_user_message=req.question,
-                new_assistant_message=ollama_answer
-            )
-        t_mem_update_end = time.time()
-        timers["memory_update"] = t_mem_update_end - t_mem_update_start
-
-        # 7️⃣ Construction réponse
-        t_response_start = time.time()
-        summary = ollama_answer.split("\n")[0][:300] if ollama_answer else "Aucune réponse."
-        steps = [line.strip() for line in ollama_answer.split("\n") if line.strip()]
-        citations = [
-            {
-                "doc": c.get("doc", ""),
-                "score": float(c.get("score", 0.0)),
-                "snippet": c.get("snippet", "")
-            }
-            for c in pack.get("citations", [])
-        ]
-        t_response_end = time.time()
-        timers["response_build"] = t_response_end - t_response_start
-
-        # Temps total
-        timers["total"] = time.time() - t0
-
-        logger.warning("\n===== PROFILING /chat =====")
-        for k, v in timers.items():
-            logger.warning(f"{k:<25} : {v*1000:.2f} ms")
-        logger.warning("=================================\n")
-
-        return ChatResponse(
-            summary=summary,
-            steps=steps,
-            citations=citations,
-            conversation_id=req.conv_id or "no-conv-id"
+    if req.conv_id:
+        await conversations.update_one(
+            {"_id": ObjectId(req.conv_id), "user_id": user["_id"]},
+            {"$push": {"messages": {
+                "role": "bot",
+                "content": answer,
+                "isUser": False,
+                "uploaded_at": datetime.utcnow()
+            }}}
         )
 
-    except Exception as e:
-        logger.error(f"Erreur /chat : {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-# ======================================================
-# ----------------- ROUTE FICHIERS ---------------------
-# ======================================================
-
-@app.get("/file/{file_id}")
-async def get_file(file_id: str):
-    try:
-        oid = ObjectId(file_id)
-        meta = await db["files"].find_one({"_id": oid})
-        if not meta:
-            logger.error(f"[FastAPI] Fichier {file_id} introuvable dans 'files'")
-            raise HTTPException(status_code=404, detail="Fichier introuvable")
-
-        stream = BytesIO()
-        await fs.download_to_stream(oid, stream)
-        stream.seek(0)
-
-        logger.info(f"[FastAPI] Fichier envoyé : {meta['filename']} ({meta['content_type']})")
-        logger.info(f"[FastAPI] URL générée : http://{APP_HOST}:{APP_PORT}/file/{file_id}")
-
-        return StreamingResponse(
-            stream,
-            media_type=meta.get("content_type", "application/octet-stream"),
-            headers={
-                "Content-Disposition": f"attachment; filename={meta['filename']}",
-                "Access-Control-Expose-Headers": "Content-Disposition"
-            }
+        await update_conversation_memory(
+            req.conv_id,
+            req.question,
+            answer
         )
 
-
-    except Exception as e:
-        logger.error(f"[FastAPI] Erreur téléchargement : {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Erreur téléchargement : {str(e)}")
-
-
-# ======================================================
-# ----------------- WEBSEARCH --------------------------
-# ======================================================
-
-@app.post("/websearch")
-async def web_search(req: dict):
-    query = req.get("query", "").strip()
-    if not query:
-        raise HTTPException(status_code=400, detail="Query vide")
-    results = simple_web_search(query)
-    return {"query": query, "results": results}
-
-# ======================================================
-# ----------------- LOGGING GLOBAL ---------------------
-# ======================================================
-
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    idem = hex(id(request))
-    try:
-        body = await request.body()
-        body_str = body.decode("utf-8", errors="ignore")[:200]
-        logger.info(f"[{idem}] {request.method} {request.url} body={body_str}")
-        start = time.time()
-        response = await call_next(request)
-        duration = (time.time() - start) * 1000
-        logger.info(f"[{idem}] Done in {duration:.2f}ms [{response.status_code}]")
-        return response
-    except Exception as e:
-        logger.error(f"[{idem}] Exception: {str(e)}", exc_info=True)
-        raise
+    return ChatResponse(
+        summary=answer.split("\n")[0][:300],
+        steps=[l for l in answer.split("\n") if l.strip()],
+        citations=pack.get("citations", []),
+        conversation_id=req.conv_id or "no-conv-id"
+    )
 
 
 # ======================================================
-# ----------------- ROUTE UPLOAD AUDIO -----------------
+# ----------------- ROUTES VOICE -----------------------
 # ======================================================
 @app.post("/upload-audio")
 async def upload_audio(audio: UploadFile = File(...)):
-    """
-    Reçoit un fichier audio, le transcrit (STT),
-    envoie le texte au LLM puis génère une réponse audio (TTS).
-    """
-    try:
-        # Sauvegarde du fichier
-        timestamp = int(time.time())
-        filename = f"{timestamp}_{audio.filename}"
-        file_path = os.path.join(UPLOAD_DIR, filename)
-        with open(file_path, "wb") as f:
-            f.write(await audio.read())
-        logger.info(f"Fichier reçu : {file_path}")
+    timestamp = int(time.time())
+    file_path = os.path.join(UPLOAD_DIR, f"{timestamp}_{audio.filename}")
+    with open(file_path, "wb") as f:
+        f.write(await audio.read())
 
-        # STT
-        stt_model = WhisperModel("base", device="cpu", compute_type="int8")
-        segments, _ = stt_model.transcribe(file_path)
-        recognized_text = " ".join([s.text for s in segments]).strip()
-        logger.info(f"Texte reconnu : {recognized_text}")
+    stt_model = WhisperModel("base", device="cpu", compute_type="int8")
+    segments, _ = stt_model.transcribe(file_path)
+    recognized_text = " ".join([s.text for s in segments]).strip()
 
-        # LLM
-        response_text = query_ollama_voice_agent(recognized_text)
-        logger.info(f" Réponse LLM : {response_text}")
+    response_text = query_ollama_voice_agent(recognized_text)
 
-        # TTS
-        pipeline = KPipeline(lang_code='a')
-        generator = pipeline(response_text, voice='af_sarah')
-        output_filename = f"response_{timestamp}.wav"
-        output_path = os.path.join(RESPONSE_DIR, output_filename)
-        with sf.SoundFile(output_path, mode='w', samplerate=24000, channels=1) as wfile:
-            for _, _, audio_chunk in generator:
-                wfile.write(audio_chunk)
-        logger.info(f"Fichier TTS généré : {output_path}")
+    pipeline = KPipeline(lang_code='a')
+    generator = pipeline(response_text, voice='af_sarah')
 
-        # Retour
-        audio_url = f"http://{APP_HOST}:{APP_PORT}/static/audio/{output_filename}"
-        return JSONResponse(content={
-            "status": "success",
-            "recognized_text": recognized_text,
-            "response_text": response_text,
-            "audio_url": audio_url
-        })
+    output_filename = f"response_{timestamp}.wav"
+    output_path = os.path.join(RESPONSE_DIR, output_filename)
 
-    except Exception as e:
-        logger.error(f"Erreur /upload-audio : {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    with sf.SoundFile(output_path, mode='w', samplerate=24000, channels=1) as wfile:
+        for _, _, chunk in generator:
+            wfile.write(chunk)
+
+    return {
+        "recognized_text": recognized_text,
+        "response_text": response_text,
+        "audio_url": f"http://{APP_HOST}:{APP_PORT}/static/audio/{output_filename}"
+    }
 
 
 # ======================================================
-# ----------------- ROUTE RESPONSE AUDIO ---------------
+# ----------------- MEMORY -----------------------------
 # ======================================================
-@app.get("/response-audio")
-async def response_audio(filename: str):
-    try:
-        file_path = os.path.join(RESPONSE_DIR, filename)
-        if os.path.exists(file_path):
-            logger.info(f"Envoi du fichier audio : {file_path}")
-            return FileResponse(file_path, media_type="audio/wav", filename=filename)
-        return JSONResponse(content={"status": "error", "message": "Fichier introuvable"}, status_code=404)
-    except Exception as e:
-        logger.error(f"Erreur /response-audio : {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-    
-
-# ======================================================
-# ----------------- souvenir ------------------
-# ======================================================
-
-async def update_conversation_memory(conversation_id, new_user_message, new_assistant_message):
+async def update_conversation_memory(conversation_id, user_msg, bot_msg):
     doc = await db.conversation_memory.find_one({"_id": conversation_id})
-
-    new_entries = [
-        {"role": "user", "content": new_user_message},
-        {"role": "assistant", "content": new_assistant_message}
+    entries = [
+        {"role": "user", "content": user_msg},
+        {"role": "assistant", "content": bot_msg}
     ]
 
     if doc:
-        messages = doc["messages"] + new_entries
-        messages = messages[-6:]  # <-- garde seulement les 3 derniers échanges
-
+        msgs = (doc["messages"] + entries)[-6:]
         await db.conversation_memory.update_one(
             {"_id": conversation_id},
-            {"$set": {"messages": messages, "updatedAt": datetime.utcnow()}}
+            {"$set": {"messages": msgs, "updatedAt": datetime.utcnow()}}
         )
     else:
         await db.conversation_memory.insert_one({
             "_id": conversation_id,
-            "messages": new_entries,
+            "messages": entries,
             "updatedAt": datetime.utcnow()
         })
 
@@ -560,7 +431,4 @@ async def get_memory_context(conversation_id):
     doc = await db.conversation_memory.find_one({"_id": conversation_id})
     if not doc:
         return ""
-    
-    # convertir en texte utilisable par le prompt
-    context = "\n".join([f"{m['role']}: {m['content']}" for m in doc["messages"]])
-    return context
+    return "\n".join([f"{m['role']}: {m['content']}" for m in doc["messages"]])

@@ -22,8 +22,11 @@ export class HistoryService {
 
   /** 🔹 Récupère les messages d’une conversation */
   getMessages(id: string): Observable<any[]> {
-    return this.http.get<any[]>(`${this.baseUrl}/api/chat/messages/${id}`);
-  }
+  return this.http
+    .get<any[]>(`${this.baseUrl}/api/chat/messages/${id}`)
+    .pipe(catchError(() => of([])));
+}
+
 
   /** 🔹 Crée une nouvelle conversation */
   createConversation(title: string): Observable<any> {

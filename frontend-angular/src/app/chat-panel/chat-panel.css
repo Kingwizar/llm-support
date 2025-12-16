@@ -13,18 +13,87 @@
 }
 
 /* -------- PANEL -------- */
+/* ======================================================
+   💬 CHAT PANEL – LIGHT DIAGONAL FLOW
+   Version plus claire du background global
+====================================================== */
 .chat-panel {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #F3EFE2;
   padding: 18px;
   height: 100%;
-  color: var(--text-dark);
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-radius: 16px;
-  backdrop-filter: blur(8px);
-  box-shadow: 0 0 20px rgba(232, 198, 2, 0.15);
+  position: relative;
+  overflow: hidden;
+
+  font-family: 'Segoe UI', sans-serif;
+
+  /* 🖤💛 Dégradé noir → jaune doux */
+  background: linear-gradient(
+    135deg,
+    #1C1C1C,
+    #222115,
+    #2A260F
+  );
+
+  color: #F5F1DC;
+
+  border-left: 1.5px solid rgba(255, 216, 59, 0.35);
+  box-shadow: inset 10px 0 30px rgba(0, 0, 0, 0.4);
+}
+
+/* -------- BANDES LUMINEUSES DIAGONALES -------- */
+.chat-panel::before,
+.chat-panel::after {
+  content: "";
+  position: absolute;
+  top: -50%;
+  left: -150%;
+  width: 300%;
+  height: 200%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.chat-panel::before {
+  background-image: linear-gradient(
+    115deg,
+    transparent 45%,
+    rgba(255, 216, 59, 0.10),
+    rgba(255, 229, 92, 0.18),
+    rgba(255, 216, 59, 0.10),
+    transparent 55%
+  );
+  animation: chatSweep 15s linear infinite;
+}
+
+.chat-panel::after {
+  background-image: linear-gradient(
+    115deg,
+    transparent 48%,
+    rgba(255, 216, 59, 0.06),
+    rgba(255, 229, 92, 0.12),
+    rgba(255, 216, 59, 0.06),
+    transparent 52%
+  );
+  animation: chatSweep 22s linear infinite;
+  animation-delay: 6s;
+}
+
+@keyframes chatSweep {
+  0% {
+    transform: translateX(100%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+/* Pour garder le contenu au-dessus */
+.messages,
+.input-bar {
+  position: relative;
+  z-index: 1;
 }
 
 /* -------- MESSAGES -------- */
