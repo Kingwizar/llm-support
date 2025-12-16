@@ -1,41 +1,73 @@
 package com.example.npone_llm.data
 
-import com.example.npone_llm.data.remote.dto.ChatRequestDto
-import com.example.npone_llm.data.remote.dto.ChatResponseDto
-import com.example.npone_llm.data.remote.dto.ConversationDto
-import com.example.npone_llm.data.remote.dto.ConversationRequestDto
-import com.example.npone_llm.data.remote.dto.MessageDto
-import com.example.npone_llm.data.remote.dto.SendMessageResponseDto
+import com.example.npone_llm.data.remote.dto.*
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import retrofit2.http.*
 
 interface ChatApi {
 
-    // 🔹 1. Chat (RAG)
-    // FastAPI → POST /chat
+    // =========================
+    // AUTH
+    // =========================
+
+    @POST("/auth/register")
+    suspend fun register(
+        @Body body: RegisterRequestDto
+    ): Map<String, Any>
+
+    @POST("/auth/login")
+    suspend fun login(
+        @Body body: LoginRequestDto
+    ): LoginResponseDto
+
+    @GET("/auth/me")
+    suspend fun me(): UserDto
+
+    // 🔹 Renommer une conversation
+    @PUT("/conversations/{id}")
+    suspend fun renameConversation(
+        @Path("id") conversationId: String,
+        @Body body: ConversationRenameRequestDto
+    ): ConversationDto
+
+    // =========================
+    // CHAT (RAG)
+    // =========================
+
     @POST("/chat")
-    suspend fun chat(@Body body: ChatRequestDto): ChatResponseDto
+    suspend fun chat(
+        @Body body: ChatRequestDto
+    ): ChatResponseDto
 
 
-    // 🔹 2. Conversations
-    // FastAPI → GET /conversations
+    // =========================
+    // CONVERSATIONS
+    // =========================
+
     @GET("/conversations")
     suspend fun getConversations(): List<ConversationDto>
 
-    // FastAPI → POST /conversations
     @POST("/conversations")
-    suspend fun createConversation(@Body body: ConversationRequestDto): ConversationDto
+    suspend fun createConversation(
+        @Body body: ConversationRequestDto
+    ): ConversationDto
 
-
-    // 🔹 3. Récupérer les messages d’une conversation
-    // FastAPI → GET /conversations/{id}/messages
     @GET("/conversations/{id}/messages")
-    suspend fun getMessages(@Path("id") conversationId: String): List<MessageDto>
+    suspend fun getMessages(
+        @Path("id") conversationId: String
+    ): List<MessageDto>
+
+    @DELETE("/conversations/{id}")
+    suspend fun deleteConversation(
+        @Path("id") id: String
+    ): Map<String, Any>
 
 
-    // 🔹 4. Envoyer un message (texte + fichiers)
-    // FastAPI → POST /message/{id}
+    // =========================
+    // MESSAGES (TEXT + FILES)
+    // =========================
+
     @Multipart
     @POST("/message/{id}")
     suspend fun sendMessage(
@@ -43,19 +75,4 @@ interface ChatApi {
         @Part("text") text: RequestBody,
         @Part files: List<MultipartBody.Part> = emptyList()
     ): SendMessageResponseDto
-
-
-    // 🔹 5. Renommer une conversation
-    // FastAPI → PUT /conversations/{id}
-    @PUT("/conversations/{id}")
-    suspend fun renameConversation(
-        @Path("id") id: String,
-        @Body body: Map<String, String>
-    ): ConversationDto
-
-
-    // 🔹 6. Supprimer une conversation
-    // FastAPI → DELETE /conversations/{id}
-    @DELETE("/conversations/{id}")
-    suspend fun deleteConversation(@Path("id") id: String): Map<String, Any>
 }
