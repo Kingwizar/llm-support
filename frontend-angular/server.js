@@ -152,6 +152,26 @@ app.delete("/api/chat/messages/:id", async (req, res) => {
   }
 });
 
+app.delete("/conversations/:id", async (req, res) => {
+  try {
+    const r = await axios.delete(
+      `${FASTAPI_URL}/conversations/${req.params.id}`,
+      {
+        headers: {
+          Authorization: req.authHeader
+        }
+      }
+    );
+
+    res.json(r.data);
+  } catch (e) {
+    res
+      .status(e.response?.status || 500)
+      .json(e.response?.data || { error: "Delete failed" });
+  }
+});
+
+
 // ✅ IMPORTANT: on SUPPRIME la route doublon suivante:
 // app.delete("/conversations/:id", ...)  <-- elle faisait doublon et pouvait créer des comportements bizarres
 
@@ -167,6 +187,27 @@ app.get("/api/chat/messages/:id", async (req, res) => {
     sendAxiosError(res, err, 401, "Unauthorized");
   }
 });
+
+app.put("/conversations/:id", async (req, res) => {
+  try {
+    const r = await axios.put(
+      `${FASTAPI_URL}/conversations/${req.params.id}`,
+      { title: req.body.title },
+      {
+        headers: {
+          Authorization: req.authHeader
+        }
+      }
+    );
+
+    res.json(r.data);
+  } catch (e) {
+    res
+      .status(e.response?.status || 500)
+      .json(e.response?.data || { error: "Rename failed" });
+  }
+});
+
 
 app.post("/api/chat/message/:id", upload.array("files"), async (req, res) => {
   const uploaded = Array.isArray(req.files) ? req.files : [];

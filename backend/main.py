@@ -124,6 +124,9 @@ class ChatResponse(BaseModel):
     citations: List[Citation]
     conversation_id: str
 
+class ConversationRename(BaseModel):
+    title: str
+
 
 # ======================================================
 # ----------------- AUTH HELPERS -----------------------
@@ -369,6 +372,47 @@ async def chat(req: ChatRequest, user=Depends(get_current_user)):
         citations=pack.get("citations", []),
         conversation_id=req.conv_id or "no-conv-id"
     )
+
+@app.put("/conversations/{conv_id}")
+async def rename_conversation(
+    conv_id: str,
+    data: ConversationRename,
+    user=Depends(get_current_user)
+):
+    result = await conversations.update_one(
+        {
+            "_id": ObjectId(conv_id),
+            "user_id": user["_id"]
+        },
+        {
+            "$set": {
+                "title": data.title.strip()
+            }
+        }
+    )
+
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Conversation introuvable")
+
+    conv = await conversations.find_one({"_id": ObjectId(conv_id)})
+    return conv_helper(conv)
+
+@app.delete("/conversations/{conv_id}")
+async def delete_conversation(
+    conv_id: str,
+    user=Depends(get_current_user)
+):
+    result = await conversations.delete_one({
+        "_id": ObjectId(conv_id),
+        "user_id": user["_id"]
+    })
+
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Conversation introuvable")
+
+    await db.conversation_memory.delete_one({"_id": conv_id})
+
+    return {"success": True}
 
 
 # ======================================================

@@ -118,13 +118,3 @@ Orientation vers l’innovation, le cloud et le edge computing
 
 Résumé final :
 N+One Datacenter est un acteur marocain majeur du datacenter et du cloud souverain, proposant des infrastructures hautement disponibles, sécurisées et certifiées, avec une stratégie d’expansion nationale et africaine. L’entreprise combine expertise locale, innovation technologique et alignement avec les besoins des entreprises pour construire une plateforme numérique souveraine pour le Maroc et le continent africain.
-
-Si tu veux, je peux aussi te préparer :
-
-une version plus courte (pour un prompt),
-
-une version segmentée en plusieurs fichiers RAG,
-
-une version JSON,
-
-une version « optimisée LLM » avec sections étiquetées.
