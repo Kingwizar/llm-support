@@ -18,10 +18,13 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
   return next(authReq).pipe(
     catchError(err => {
-      if (err.status === 401) {
-        auth.logout();
-        router.navigate(['/login']);
-      }
+                if (err.status === 401) {
+            auth.logout();
+            if (!location.pathname.startsWith('/login')) {
+              router.navigate(['/login']);
+            }
+          }
+
       return throwError(() => err);
     })
   );

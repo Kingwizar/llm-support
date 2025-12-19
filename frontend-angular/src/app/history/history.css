@@ -112,18 +112,24 @@
   transition: transform 0.2s ease, color 0.2s ease;
 }
 
-/* Hover */
 .conversation-item:hover {
   background: rgba(255, 216, 59, 0.18);
+  
 
   border-image: linear-gradient(
+    
     135deg,
     #FFE55C,
     #FFB703,
     #FF7B00
   ) 1;
 
+  border-radius: 20px;
+
+
+
   transform: translateY(-2px) scale(1.02);
+  padding: 14px;
 
   box-shadow:
     0 8px 22px rgba(255, 216, 59, 0.35),

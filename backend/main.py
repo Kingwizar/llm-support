@@ -1,5 +1,4 @@
 from fastapi import FastAPI, Request, HTTPException, File, UploadFile, Form, Depends
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordBearer
@@ -14,6 +13,7 @@ from passlib.context import CryptContext
 from io import BytesIO
 import os, time, logging
 import soundfile as sf
+import requests
 
 # === Modules IA ===
 from faster_whisper import WhisperModel
@@ -24,12 +24,8 @@ from llm.rag_core import (
     query_ollama_voice_agent
 )
 from llm.prompt_builder import (
-    build_prompt_from_extracted_file,
     build_runtime_prompt_with_memory
 )
-from ingest.file_ingest import extract_text_from_file
-from ingest.web_search import simple_web_search
-
 
 # ======================================================
 # ----------------- CONFIGURATION ----------------------
@@ -55,7 +51,6 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 app = FastAPI(title="LLM Chat API")
 logger = logging.getLogger("uvicorn.error")
 
-
 # ======================================================
 # ----------------- STATIC + CORS ----------------------
 # ======================================================
@@ -74,7 +69,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 # ======================================================
 # ----------------- MONGO ------------------------------
 # ======================================================
@@ -86,6 +80,14 @@ fs = AsyncIOMotorGridFSBucket(db)
 
 logger.info(f"MongoDB connecté à {MONGO_URI}/{MONGO_DB}")
 
+# ======================================================
+# ----------------- AUTH0 CONFIG -----------------------
+# ======================================================
+AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN", "dev-5xqrzsdislhri5jj.us.auth0.com")
+API_AUDIENCE = os.getenv("AUTH0_AUDIENCE", "https://llm-support-api")
+
+# cache JWKS (simple)
+jwks = requests.get(f"https://{AUTH0_DOMAIN}/.well-known/jwks.json", timeout=10).json()
 
 # ======================================================
 # ----------------- MODELS -----------------------------
@@ -102,7 +104,7 @@ class UserLogin(BaseModel):
 class UserOut(BaseModel):
     id: str
     username: str
-    email: EmailStr
+    email: Optional[EmailStr] = None
     role: str
     created_at: datetime
 
@@ -127,18 +129,43 @@ class ChatResponse(BaseModel):
 class ConversationRename(BaseModel):
     title: str
 
-
 # ======================================================
 # ----------------- AUTH HELPERS -----------------------
 # ======================================================
+def verify_auth0_token(token: str) -> dict:
+    unverified_header = jwt.get_unverified_header(token)
+
+    rsa_key = None
+    for key in jwks.get("keys", []):
+        if key.get("kid") == unverified_header.get("kid"):
+            rsa_key = {
+                "kty": key["kty"],
+                "kid": key["kid"],
+                "use": key["use"],
+                "n": key["n"],
+                "e": key["e"],
+            }
+            break
+
+    if not rsa_key:
+        raise HTTPException(status_code=401, detail="Invalid token (kid not found)")
+
+    try:
+        payload = jwt.decode(
+            token,
+            rsa_key,
+            algorithms=["RS256"],
+            audience=API_AUDIENCE,
+            issuer=f"https://{AUTH0_DOMAIN}/"
+        )
+        return payload
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid Auth0 token")
+
 def hash_password(password: str) -> str:
     if len(password.encode("utf-8")) > 72:
-        raise HTTPException(
-            status_code=400,
-            detail="Le mot de passe est trop long (max 72 caractères)"
-        )
+        raise HTTPException(status_code=400, detail="Le mot de passe est trop long (max 72 caractères)")
     return pwd_context.hash(password)
-
 
 def verify_password(password: str, hashed: str) -> bool:
     return pwd_context.verify(password, hashed)
@@ -148,25 +175,39 @@ def create_access_token(data: dict) -> str:
     payload["exp"] = datetime.utcnow() + timedelta(hours=JWT_EXPIRE_HOURS)
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-def decode_token(token: str) -> dict:
-    return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+# ✅ IMPORTANT : async + await Mongo
+async def get_current_user(request: Request):
+    auth = request.headers.get("Authorization")
+    if not auth or not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing token")
 
-async def get_current_user(token: str = Depends(oauth2_scheme)):
+    token = auth.split(" ", 1)[1].strip()
+
+    # 1) JWT local HS256
     try:
-        payload = decode_token(token)
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = payload.get("sub")
         if not user_id:
-            raise HTTPException(status_code=401, detail="Token invalide")
+            raise HTTPException(status_code=401, detail="Invalid token")
 
         user = await db["users"].find_one({"_id": ObjectId(user_id)})
         if not user:
-            raise HTTPException(status_code=401, detail="Utilisateur introuvable")
-
-        user["_id"] = str(user["_id"])
+            raise HTTPException(status_code=401, detail="User not found")
         return user
-
     except JWTError:
-        raise HTTPException(status_code=401, detail="Token invalide")
+        pass
+    except Exception:
+        pass
+
+    # 2) Auth0 RS256
+    payload = verify_auth0_token(token)  # si token JWE -> ça va fail => 401
+    return {
+        "_id": payload["sub"],   # string
+        "email": payload.get("email"),
+        "username": payload.get("name") or payload.get("nickname") or "Auth0 User",
+        "role": "user",
+        "created_at": datetime.utcnow()
+    }
 
 
 # ======================================================
@@ -186,8 +227,18 @@ async def register(user: UserRegister):
     }
 
     result = await db["users"].insert_one(doc)
-    print(user)
     return {"success": True, "user_id": str(result.inserted_id)}
+
+
+@app.get("/debug/db-info")
+async def debug_db():
+    return {
+        "mongo_uri": MONGO_URI,
+        "mongo_db": MONGO_DB
+    }
+
+
+
 
 @app.post("/auth/login")
 async def login(data: UserLogin):
@@ -197,7 +248,7 @@ async def login(data: UserLogin):
 
     token = create_access_token({
         "sub": str(user["_id"]),
-        "role": user["role"]
+        "role": user.get("role", "user")
     })
 
     return {"access_token": token, "token_type": "bearer"}
@@ -205,12 +256,13 @@ async def login(data: UserLogin):
 @app.get("/auth/me", response_model=UserOut)
 async def me(user=Depends(get_current_user)):
     return UserOut(
-        id=user["_id"],
-        username=user["username"],
-        email=user["email"],
-        role=user["role"],
-        created_at=user["created_at"]
+        id=str(user.get("_id")),
+        username=user.get("username") or "Utilisateur",
+        email=user.get("email") if user.get("email") else None,
+        role=user.get("role", "user"),
+        created_at=user.get("created_at") or datetime.utcnow()
     )
+
 
 
 # ======================================================
@@ -238,7 +290,6 @@ def make_file_url(file_id: str) -> str:
         return f"{PUBLIC_BASE_URL.rstrip('/')}/file/{file_id}"
     return f"http://{APP_HOST}:{APP_PORT}/file/{file_id}"
 
-
 # ======================================================
 # ----------------- ROUTES CONVERSATIONS ---------------
 # ======================================================
@@ -250,14 +301,34 @@ async def get_conversations(user=Depends(get_current_user)):
 @app.post("/conversations")
 async def create_conversation(data: ConversationCreate, user=Depends(get_current_user)):
     result = await conversations.insert_one({
-        "user_id": user["_id"],
-        "title": data.title,
+        "user_id": user["_id"],  # ✅ ObjectId (mongo) ou string (auth0)
+        "title": data.title.strip() or "Nouvelle conversation",
         "messages": [],
         "created_at": datetime.utcnow()
     })
     conv = await conversations.find_one({"_id": result.inserted_id})
     return conv_helper(conv)
 
+@app.put("/conversations/{conv_id}")
+async def rename_conversation(conv_id: str, data: ConversationRename, user=Depends(get_current_user)):
+    result = await conversations.update_one(
+        {"_id": ObjectId(conv_id), "user_id": user["_id"]},
+        {"$set": {"title": data.title.strip()}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Conversation introuvable")
+
+    conv = await conversations.find_one({"_id": ObjectId(conv_id)})
+    return conv_helper(conv)
+
+@app.delete("/conversations/{conv_id}")
+async def delete_conversation(conv_id: str, user=Depends(get_current_user)):
+    result = await conversations.delete_one({"_id": ObjectId(conv_id), "user_id": user["_id"]})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Conversation introuvable")
+
+    await conversation_memory.delete_one({"_id": conv_id})
+    return {"success": True}
 
 # ======================================================
 # ----------------- ROUTE MESSAGE ----------------------
@@ -274,6 +345,7 @@ async def send_message(
     for file in files:
         data = await file.read()
         file_id = await fs.upload_from_stream(file.filename, BytesIO(data))
+
         await db["files"].insert_one({
             "_id": file_id,
             "filename": file.filename,
@@ -304,33 +376,11 @@ async def send_message(
     return {"success": True}
 
 @app.get("/conversations/{conv_id}/messages")
-async def get_messages(conv_id: str):
-    try:
-        conv = await conversations.find_one({"_id": ObjectId(conv_id)})
-
-        if not conv:
-            # ⚠️ IMPORTANT : conversation inexistante → messages vides
-            return []
-
-        return [clean_message(m) for m in conv.get("messages", [])]
-
-    except Exception as e:
-        logger.error(f"Erreur get_messages : {e}", exc_info=True)
+async def get_messages(conv_id: str, user=Depends(get_current_user)):
+    conv = await conversations.find_one({"_id": ObjectId(conv_id), "user_id": user["_id"]})
+    if not conv:
         return []
-
-@app.delete("/conversations/{conv_id}")
-async def delete_conversation(conv_id: str, user=Depends(get_current_user)):
-    result = await conversations.delete_one({
-        "_id": ObjectId(conv_id),
-        "user_id": user["_id"]
-    })
-
-    if result.deleted_count == 0:
-        # conversation inexistante → OK logique
-        return {"success": False}
-
-    return {"success": True}
-
+    return [clean_message(m) for m in conv.get("messages", [])]
 
 # ======================================================
 # ----------------- ROUTE CHAT (RAG) -------------------
@@ -360,11 +410,7 @@ async def chat(req: ChatRequest, user=Depends(get_current_user)):
             }}}
         )
 
-        await update_conversation_memory(
-            req.conv_id,
-            req.question,
-            answer
-        )
+        await update_conversation_memory(req.conv_id, req.question, answer)
 
     return ChatResponse(
         summary=answer.split("\n")[0][:300],
@@ -372,48 +418,6 @@ async def chat(req: ChatRequest, user=Depends(get_current_user)):
         citations=pack.get("citations", []),
         conversation_id=req.conv_id or "no-conv-id"
     )
-
-@app.put("/conversations/{conv_id}")
-async def rename_conversation(
-    conv_id: str,
-    data: ConversationRename,
-    user=Depends(get_current_user)
-):
-    result = await conversations.update_one(
-        {
-            "_id": ObjectId(conv_id),
-            "user_id": user["_id"]
-        },
-        {
-            "$set": {
-                "title": data.title.strip()
-            }
-        }
-    )
-
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Conversation introuvable")
-
-    conv = await conversations.find_one({"_id": ObjectId(conv_id)})
-    return conv_helper(conv)
-
-@app.delete("/conversations/{conv_id}")
-async def delete_conversation(
-    conv_id: str,
-    user=Depends(get_current_user)
-):
-    result = await conversations.delete_one({
-        "_id": ObjectId(conv_id),
-        "user_id": user["_id"]
-    })
-
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Conversation introuvable")
-
-    await db.conversation_memory.delete_one({"_id": conv_id})
-
-    return {"success": True}
-
 
 # ======================================================
 # ----------------- ROUTES VOICE -----------------------
@@ -447,12 +451,11 @@ async def upload_audio(audio: UploadFile = File(...)):
         "audio_url": f"http://{APP_HOST}:{APP_PORT}/static/audio/{output_filename}"
     }
 
-
 # ======================================================
 # ----------------- MEMORY -----------------------------
 # ======================================================
 async def update_conversation_memory(conversation_id, user_msg, bot_msg):
-    doc = await db.conversation_memory.find_one({"_id": conversation_id})
+    doc = await conversation_memory.find_one({"_id": conversation_id})
     entries = [
         {"role": "user", "content": user_msg},
         {"role": "assistant", "content": bot_msg}
@@ -460,19 +463,19 @@ async def update_conversation_memory(conversation_id, user_msg, bot_msg):
 
     if doc:
         msgs = (doc["messages"] + entries)[-6:]
-        await db.conversation_memory.update_one(
+        await conversation_memory.update_one(
             {"_id": conversation_id},
             {"$set": {"messages": msgs, "updatedAt": datetime.utcnow()}}
         )
     else:
-        await db.conversation_memory.insert_one({
+        await conversation_memory.insert_one({
             "_id": conversation_id,
             "messages": entries,
             "updatedAt": datetime.utcnow()
         })
 
 async def get_memory_context(conversation_id):
-    doc = await db.conversation_memory.find_one({"_id": conversation_id})
+    doc = await conversation_memory.find_one({"_id": conversation_id})
     if not doc:
         return ""
     return "\n".join([f"{m['role']}: {m['content']}" for m in doc["messages"]])

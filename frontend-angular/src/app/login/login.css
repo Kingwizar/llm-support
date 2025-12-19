@@ -187,3 +187,71 @@
   color: #FF5A5A;
   text-align: center;
 }
+
+
+/* ===============================
+   BOUTON PRINCIPAL (séparé)
+================================ */
+
+.primary-btn {
+  margin-top: 8px;
+  width: 100%;
+}
+
+/* ===============================
+   OAUTH RONDS
+================================ */
+
+.oauth-buttons.round {
+  margin-top: 12px;
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+}
+
+.oauth-btn {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: linear-gradient(
+    145deg,
+    #FFD83B,
+    #FFE55C,
+    #E8C602
+  );
+
+  box-shadow:
+    0 0 12px rgba(255, 216, 59, 0.55),
+    inset 0 2px 3px rgba(255, 255, 255, 0.45);
+
+  transition: transform .25s ease, box-shadow .25s ease;
+}
+
+.oauth-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.oauth-btn:hover {
+  transform: translateY(-2px) scale(1.08);
+  box-shadow:
+    0 0 18px rgba(255, 216, 59, 0.9),
+    inset 0 2px 4px rgba(255, 255, 255, 0.6);
+}
+
+.oauth-btn:active {
+  transform: scale(0.95);
+}
+
+
+.google-icon {
+  width: 22px;   /* ajuste ici */
+  height: 22px;
+}
