@@ -8,7 +8,7 @@ import faiss
 import subprocess
 from typing import List, Dict, Any
 from sentence_transformers import SentenceTransformer
-
+from io import BytesIO
 from llm.prompt_builder import build_runtime_prompt
 from llm.web_search import simple_web_search
 from llm.ai_chat.voice_agent_prompt import build_voice_agent_prompt
@@ -24,7 +24,6 @@ TOP_K_DEFAULT = 4
 EMB_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
-
 # ==================== TEXT & CHUNKING ====================
 
 def chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> List[str]:

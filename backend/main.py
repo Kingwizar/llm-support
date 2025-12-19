@@ -10,10 +10,13 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from jose import jwt, JWTError
 from passlib.context import CryptContext
-from io import BytesIO
 import os, time, logging
 import soundfile as sf
 import requests
+from llm.rag_conversation import index_file_for_conversation
+from io import BytesIO
+from llm.rag_conversation import retrieve_from_conversation, index_file_for_conversation, extract_text
+
 
 # === Modules IA ===
 from faster_whisper import WhisperModel
@@ -346,6 +349,15 @@ async def send_message(
         data = await file.read()
         file_id = await fs.upload_from_stream(file.filename, BytesIO(data))
 
+        extracted = extract_text(file.filename, data)
+
+        if extracted.strip():
+            index_file_for_conversation(
+                conv_id=conv_id,
+                filename=file.filename,
+                text=extracted
+            )
+
         await db["files"].insert_one({
             "_id": file_id,
             "filename": file.filename,
@@ -387,18 +399,69 @@ async def get_messages(conv_id: str, user=Depends(get_current_user)):
 # ======================================================
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest, user=Depends(get_current_user)):
-    pack = answer_with_rag_or_web(req.question) or {}
 
     memory = await get_memory_context(req.conv_id) if req.conv_id else ""
+
+    # 1️⃣ RAG conversation (documents uploadés)
+    raw_conv_hits = retrieve_from_conversation(req.conv_id, req.question)
+
+    CONV_SIM_THRESHOLD = 0.45
+    conv_hits = [
+        h for h in raw_conv_hits
+        if h.get("score", 0) >= CONV_SIM_THRESHOLD
+    ]
+
+
+
+    # 👉 Le web / RAG global ne sont utilisés QUE si aucun document utilisateur pertinent
+    use_web = len(conv_hits) == 0
+
+    # 2️⃣ RAG global + web (conditionnel)
+    global_pack = answer_with_rag_or_web(req.question) if use_web else {}
+
+    # 3️⃣ Fusion des hits (pour citations)
+    all_hits = conv_hits + global_pack.get("citations", [])
+
+    # 4️⃣ Construction hiérarchique du contexte
+    sources_parts = []
+
+    # 🔵 PRIORITÉ 1 — Documents fournis par l’utilisateur
+    if conv_hits:
+        sources_parts.append(
+            "## 📄 Documents fournis par l’utilisateur\n" +
+            "\n".join(
+                f"- **{h['doc']}** : {h['text'][:500]}"
+                for h in conv_hits
+            )
+        )
+
+    # 🟢 PRIORITÉ 2 — RAG interne (si aucun document utilisateur)
+    if not conv_hits and global_pack.get("sources_block"):
+        sources_parts.append(
+            "## 🧠 Base de connaissance interne N+One\n" +
+            global_pack["sources_block"]
+        )
+
+    # 🟠 PRIORITÉ 3 — Web (uniquement si nécessaire)
+    if use_web and global_pack.get("sources_block"):
+        sources_parts.append(
+            "## 🌐 Complément externe (web)\n" +
+            global_pack["sources_block"]
+        )
+
+    sources_block = "\n\n".join(sources_parts)
+
+    # 5️⃣ PROMPT FINAL (LE SEUL ENVOYÉ AU LLM)
     prompt = build_runtime_prompt_with_memory(
         question=req.question,
-        hits=pack.get("hits", []),
-        sources_block=pack.get("sources_block", ""),
+        hits=all_hits,
+        sources_block=sources_block,
         memory_context=memory
     )
 
     answer = query_ollama(prompt, model_name="qwen14b_llm")
 
+    # 6️⃣ Sauvegarde conversation + mémoire
     if req.conv_id:
         await conversations.update_one(
             {"_id": ObjectId(req.conv_id), "user_id": user["_id"]},
@@ -415,9 +478,10 @@ async def chat(req: ChatRequest, user=Depends(get_current_user)):
     return ChatResponse(
         summary=answer.split("\n")[0][:300],
         steps=[l for l in answer.split("\n") if l.strip()],
-        citations=pack.get("citations", []),
+        citations=all_hits,
         conversation_id=req.conv_id or "no-conv-id"
     )
+
 
 # ======================================================
 # ----------------- ROUTES VOICE -----------------------
