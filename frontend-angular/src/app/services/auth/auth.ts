@@ -7,15 +7,17 @@ import { AuthService as Auth0Service } from '@auth0/auth0-angular';
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private baseUrl = environment.serverUrl;
-
-  // ✅ UNE seule clé pour tous (login local + Auth0)
   private tokenKey = 'auth_token';
 
   private currentUser$ = new BehaviorSubject<any | null>(null);
   user$ = this.currentUser$.asObservable();
 
-  constructor(private http: HttpClient, private auth0: Auth0Service) {}
+  constructor(
+    private http: HttpClient,
+    private auth0: Auth0Service
+  ) {}
 
+  // ===== AUTH LOCALE =====
   login(email: string, password: string) {
     return this.http
       .post<any>(`${this.baseUrl}/auth/login`, { email, password })
@@ -30,22 +32,36 @@ export class AuthService {
     return this.http.post(`${this.baseUrl}/auth/register`, data);
   }
 
+  // ===== UTILISATEUR =====
   loadMe() {
-    return this.http.get(`${this.baseUrl}/auth/me`).pipe(
-      tap(user => this.currentUser$.next(user))
-    );
-  }
+  console.log('📡 /auth/me called');
+  return this.http.get(`${this.baseUrl}/auth/me`).pipe(
+    tap(user => {
+      console.log('✅ /auth/me response:', user);
+      this.currentUser$.next(user);
+    })
+  );
+}
+
+  
 
   logout() {
-    // ✅ nettoie proprement
-    localStorage.removeItem(this.tokenKey);
-    this.currentUser$.next(null);
+  alert('LOGOUT APPELÉ'); // 🔴 test brutal
+  console.log('🚪 Logout appelé');
 
-    // ✅ logout Auth0 (si session Auth0 active)
-    this.auth0.logout({
-      logoutParams: { returnTo: window.location.origin }
-    });
-  }
+  localStorage.removeItem(this.tokenKey);
+  this.currentUser$.next(null);
+
+  const keycloakLogoutUrl =
+    'http://localhost:8080/realms/nplusone/protocol/openid-connect/logout' +
+    '?client_id=llm-support-api' +
+    '&post_logout_redirect_uri=' +
+    encodeURIComponent(window.location.origin + '/login');
+
+  window.location.href = keycloakLogoutUrl;
+}
+
+
 
   getToken(): string | null {
     return localStorage.getItem(this.tokenKey);
@@ -55,11 +71,11 @@ export class AuthService {
     return !!this.getToken();
   }
 
+  // ===== AUTH0 =====
   loginWithAuth0() {
     return this.auth0.loginWithRedirect();
   }
 
-  /** 🔑 Récupère le token Auth0 et le stocke dans la MÊME clé */
   loadAuth0Token() {
     return this.auth0.getAccessTokenSilently().pipe(
       tap(token => {
@@ -69,7 +85,7 @@ export class AuthService {
   }
 }
 
-// ✅ configuration Auth0 exportée
+// ===== CONFIG AUTH0 =====
 export const auth0Config = {
   domain: 'dev-5xqrzsdislhri5jj.us.auth0.com',
   clientId: 'oLJYZBFTXTrIWpY0y9oOxXfBw3dJxlwe',
@@ -80,3 +96,9 @@ export const auth0Config = {
   }
 };
 
+// ===== CONFIG KEYCLOAK =====
+export const keycloakConfig = {
+  url: 'http://localhost:8080',
+  realm: 'nplusone',
+  clientId: 'llm-support-api'
+};

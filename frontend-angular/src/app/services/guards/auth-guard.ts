@@ -2,16 +2,20 @@ import { CanActivateFn, Router } from '@angular/router';
 import { inject } from '@angular/core';
 import { AuthService } from '../auth/auth';
 
-export const authGuard: CanActivateFn = () => {
+export const authGuard: CanActivateFn = (route, state) => {
   const auth = inject(AuthService);
   const router = inject(Router);
 
-  // ✅ si token présent → OK
+  // ✅ Toujours autoriser le callback
+  if (state.url.startsWith('/callback')) {
+    console.log('🟡 Guard bypass for callback');
+    return true;
+  }
+
   if (auth.isLoggedIn()) {
     return true;
   }
 
-  // ❌ sinon → retour login
   router.navigate(['/login']);
   return false;
 };

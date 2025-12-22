@@ -1,11 +1,11 @@
 <div class="chat-panel">
   <h3 *ngIf="activeConversation">💬 {{ activeConversation.title }}</h3>
 
-  <div class="messages">
+  <div class="messages" #messagesContainer>
     <div *ngFor="let msg of messages" [ngClass]="msg.role">
       <div class="bubble">
         <!-- 💬 Texte -->
-         <div
+        <div
           class="text markdown"
           *ngIf="msg.content"
           [innerHTML]="renderMarkdown(msg.content)">

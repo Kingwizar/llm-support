@@ -2,6 +2,35 @@
    🎨 HISTORY PANEL – DARK GLASS (BLACK ↔ GOLD)
 ====================================================== */
 
+.history::-webkit-scrollbar {
+  width: 6px;              /* largeur fine */
+}
+.history::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.6);   /* fond sombre */
+  border-radius: 10px;
+}
+
+.history::-webkit-scrollbar-thumb {
+  background: linear-gradient(
+    180deg,
+    #E8C602,
+    #FFB703,
+    #FF7B00
+  );
+  border-radius: 10px;
+  box-shadow: 0 0 8px rgba(255, 216, 59, 0.6);
+}
+
+.history::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(
+    180deg,
+    #FFE55C,
+    #FFB703,
+    #FF7B00
+  );
+  box-shadow: 0 0 14px rgba(255, 229, 92, 0.85);
+}
+
 /* -------- PANNEAU HISTORY -------- */
 .history {
   padding: 0 16px;
@@ -18,7 +47,7 @@
     #2A260F
   );
 
-  color: #F3F0DC;
+  color: #000000;
 
   border-right: 1.5px solid rgba(255, 216, 59, 0.35);
   backdrop-filter: blur(10px);

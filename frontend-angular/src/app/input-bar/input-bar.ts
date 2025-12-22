@@ -41,4 +41,9 @@ export class InputBar {
     this.prompt = '';
     this.selectedFiles = [];
   }
+  onEnter(event: KeyboardEvent) {
+  event.preventDefault();
+  this.sendMessage();
+}
+
 }

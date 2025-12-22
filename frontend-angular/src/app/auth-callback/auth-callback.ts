@@ -15,18 +15,46 @@ export class AuthCallbackComponent implements OnInit {
   ) {}
 
   ngOnInit() {
-    this.auth0.isAuthenticated$.subscribe(isAuth => {
-      if (isAuth) {
-        this.auth.loadAuth0Token().subscribe({
-          next: () => {
-            this.auth.loadMe().subscribe({
-              next: () => this.router.navigate(['/']),
-              error: () => this.router.navigate(['/login'])
-            });
-          },
-          error: () => this.router.navigate(['/login'])
-        });
-      }
-    });
+  console.log('🔵 CALLBACK INIT');
+  console.log('URL:', window.location.href);
+
+  // ================= AUTH0 (NE PAS TOUCHER) =================
+  this.auth0.isAuthenticated$.subscribe(isAuth => {
+    if (isAuth) {
+      this.auth.loadAuth0Token().subscribe({
+        next: () => this.finalizeLogin(),
+        error: () => this.router.navigate(['/login'])
+      });
+    }
+  });
+
+  // ================= KEYCLOAK =================
+  
+}
+
+private waitForKeycloakToken() {
+  const token = localStorage.getItem('auth_token');
+
+  if (token) {
+    console.log('✅ Keycloak token ready → backend');
+
+    this.finalizeLogin();
+  } else {
+    setTimeout(() => this.waitForKeycloakToken(), 100);
   }
+}
+
+private finalizeLogin() {
+  this.auth.loadMe().subscribe({
+    next: user => {
+      console.log('✅ Backend OK:', user);
+      this.router.navigate(['/']);
+    },
+    error: err => {
+      console.error('❌ Backend error:', err);
+      this.router.navigate(['/login']);
+    }
+  });
+}
+
 }
