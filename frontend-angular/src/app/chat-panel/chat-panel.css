@@ -14,7 +14,7 @@
 
 /* -------- PANEL -------- */
 /* ======================================================
-   💬 CHAT PANEL – LIGHT DIAGONAL FLOW
+   CHAT PANEL – LIGHT DIAGONAL FLOW
    Version plus claire du background global
 ====================================================== */
 .chat-panel {
@@ -30,7 +30,7 @@
 
   font-family: 'Segoe UI', sans-serif;
 
-  /* 🖤💛 Dégradé noir → jaune doux */
+  /*  Dégradé noir → jaune doux */
   background: linear-gradient(
     135deg,
     #1C1C1C,

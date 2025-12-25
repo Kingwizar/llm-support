@@ -9,7 +9,7 @@ import { AuthService as Auth0Service } from '@auth0/auth0-angular';
   standalone: true,
   selector: 'app-login',
   imports: [CommonModule, FormsModule, RouterLink],
-  templateUrl: './login.html',     // ✅ RELATIF AU DOSSIER login/
+  templateUrl: './login.html',
   styleUrls: ['./login.css']
 })
 export class LoginComponent {
@@ -40,7 +40,7 @@ export class LoginComponent {
     });
   }
 
-  loginWithKeycloakGoogle() {
+  loginKeycloak() {
   const loginUrl =
     'http://localhost:8080/realms/nplusone/protocol/openid-connect/auth' +
     '?client_id=llm-support-api' +
