@@ -40,17 +40,7 @@ export class LoginComponent {
     });
   }
 
-  loginKeycloak() {
-  const loginUrl =
-    'http://localhost:8080/realms/nplusone/protocol/openid-connect/auth' +
-    '?client_id=llm-support-api' +
-    '&redirect_uri=' + encodeURIComponent(window.location.origin + '/callback') +
-    '&response_type=code' +
-    '&scope=openid' +
-    '&kc_idp_hint=google';
-
-  window.location.href = loginUrl;
-}
+  
 
 
 

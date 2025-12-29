@@ -25,7 +25,7 @@ export class ChatService {
 
   /** Envoi d’un message (texte + fichiers) vers FastAPI via Express */
   sendMessage(convId: string, formData: FormData) {
-  return this.http.post(`http://127.0.0.1:3000/api/chat/message/${convId}`, formData);
+  return this.http.post(`${this.baseUrl}/api/chat/message/${convId}`, formData);
 }
 
 

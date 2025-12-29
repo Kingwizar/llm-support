@@ -22,6 +22,7 @@ const upload = multer({ storage });
 
 // ================== EXPRESS INIT ==================
 const app = express();
+app.set("trust proxy", true);
 const PORT = process.env.APP_PORT || 3000;
 const FASTAPI_URL = process.env.FASTAPI_URL;
 
@@ -37,11 +38,13 @@ const CORS_ORIGINS = process.env.CORS_ORIGINS?.split(",") || [
 app.use(express.json());
 app.use(
   cors({
-    origin: CORS_ORIGINS,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    origin: true, // ✅ accepte dynamiquement l’origine (ngrok)
     credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
+
 
 // ================== LOGGER ==================
 app.use((req, res, next) => {
@@ -273,6 +276,25 @@ app.get("/api/chat/file/:id", async (req, res) => {
     sendAxiosError(res, err, 500, "File download failed");
   }
 });
+
+const angularDist = path.join(
+  __dirname,
+  "../frontend-angular/dist/frontend-angular/browser"
+);
+
+app.use(express.static(angularDist));
+
+app.use((req, res, next) => {
+  if (req.path.startsWith("/api") || req.path.startsWith("/auth")) {
+    return res.status(404).json({ error: "API route not found" });
+  }
+  next();
+});
+
+app.use((req, res) => {
+  res.sendFile(path.join(angularDist, "index.html"));
+});
+
 
 // ================== START SERVER ==================
 app.listen(PORT, "0.0.0.0", () => {

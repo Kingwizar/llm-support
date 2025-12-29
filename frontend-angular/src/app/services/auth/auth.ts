@@ -46,20 +46,18 @@ export class AuthService {
   
 
   logout() {
-  alert('LOGOUT APPELÉ'); // 🔴 test brutal
-  console.log('🚪 Logout appelé');
+  console.log('🚪 Logout');
 
   localStorage.removeItem(this.tokenKey);
   this.currentUser$.next(null);
 
-  const keycloakLogoutUrl =
-    'http://localhost:8080/realms/nplusone/protocol/openid-connect/logout' +
-    '?client_id=llm-support-api' +
-    '&post_logout_redirect_uri=' +
-    encodeURIComponent(window.location.origin + '/login');
-
-  window.location.href = keycloakLogoutUrl;
+  this.auth0.logout({
+    logoutParams: {
+      returnTo: window.location.origin + '/login'
+    }
+  });
 }
+
 
 
 
@@ -96,9 +94,5 @@ export const auth0Config = {
   }
 };
 
-// ===== CONFIG KEYCLOAK =====
-export const keycloakConfig = {
-  url: 'http://localhost:8080',
-  realm: 'nplusone',
-  clientId: 'llm-support-api'
-};
+
+

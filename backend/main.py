@@ -66,7 +66,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS if CORS_ORIGINS != [""] else ["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -87,9 +87,6 @@ logger.info(f"MongoDB connecté à {MONGO_URI}/{MONGO_DB}")
 # ----------------- AUTH0 CONFIG -----------------------
 # ======================================================
 
-KEYCLOAK_DOMAIN = os.getenv("KEYCLOAK_DOMAIN", "localhost:8080")
-KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "nplusone")
-KEYCLOAK_AUDIENCE = os.getenv("KEYCLOAK_AUDIENCE", "llm-support-api")
 
 AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN", "dev-5xqrzsdislhri5jj.us.auth0.com")
 API_AUDIENCE = os.getenv("AUTH0_AUDIENCE", "https://llm-support-api")
@@ -97,10 +94,7 @@ API_AUDIENCE = os.getenv("AUTH0_AUDIENCE", "https://llm-support-api")
 # cache JWKS (simple)
 jwks = requests.get(f"https://{AUTH0_DOMAIN}/.well-known/jwks.json", timeout=10).json()
 
-keycloak_jwks = requests.get(
-  f"http://{KEYCLOAK_DOMAIN}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/certs",
-  timeout=10
-).json()
+
 
 
 # ======================================================
@@ -184,20 +178,6 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, hashed: str) -> bool:
     return pwd_context.verify(password, hashed)
 
-def verify_keycloak_token(token: str) -> dict:
-    header = jwt.get_unverified_header(token)
-
-    for key in keycloak_jwks["keys"]:
-        if key["kid"] == header["kid"]:
-            return jwt.decode(
-                token,
-                key,
-                algorithms=["RS256"],
-                audience=KEYCLOAK_AUDIENCE,
-                issuer=f"http://{KEYCLOAK_DOMAIN}/realms/{KEYCLOAK_REALM}"
-            )
-
-    raise HTTPException(401, "Invalid Keycloak token")
 
 
 def create_access_token(data: dict) -> str:
@@ -272,40 +252,6 @@ async def get_current_user(request: Request):
     except Exception as e:
         logger.info("⏭️ Not an AUTH0 token: %s", str(e))
 
-    # ======================================================
-    # 3️⃣ KEYCLOAK (RS256)
-    # ======================================================
-    try:
-        logger.info("🟡 Trying KEYCLOAK JWT (RS256)")
-        header = jwt.get_unverified_header(token)
-        logger.info("🟡 JWT header: %s", header)
-
-        for key in keycloak_jwks["keys"]:
-            if key["kid"] == header["kid"]:
-                payload = jwt.decode(
-                    token,
-                    key,
-                    algorithms=["RS256"],
-                    options={"verify_aud": False},
-                    issuer=f"http://{KEYCLOAK_DOMAIN}/realms/{KEYCLOAK_REALM}"
-                )
-
-
-                logger.info("✅ Authenticated KEYCLOAK user: %s", payload.get("sub"))
-
-                return {
-                    "_id": payload["sub"],
-                    "email": payload.get("email"),
-                    "username": payload.get("preferred_username"),
-                    "role": payload.get("realm_access", {}).get("roles", ["user"])[0],
-                    "created_at": datetime.utcnow(),
-                    "provider": "keycloak"
-                }
-
-        raise Exception("Keycloak kid not found")
-
-    except Exception as e:
-        logger.info("⏭️ Not a KEYCLOAK token: %s", str(e))
 
     logger.error("❌ Invalid authentication token")
     raise HTTPException(status_code=401, detail="Invalid authentication token")

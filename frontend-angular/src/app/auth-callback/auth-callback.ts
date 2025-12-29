@@ -28,20 +28,8 @@ export class AuthCallbackComponent implements OnInit {
     }
   });
 
-  // ================= KEYCLOAK =================
+
   
-}
-
-private waitForKeycloakToken() {
-  const token = localStorage.getItem('auth_token');
-
-  if (token) {
-    console.log('✅ Keycloak token ready → backend');
-
-    this.finalizeLogin();
-  } else {
-    setTimeout(() => this.waitForKeycloakToken(), 100);
-  }
 }
 
 private finalizeLogin() {
