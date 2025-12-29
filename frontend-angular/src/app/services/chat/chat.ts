@@ -30,7 +30,7 @@ export class ChatService {
 
 
   /** Pose une question au LLM RAG */
-  askLLM(question: string, convId?: string): Observable<ChatResponse> {
-    return this.http.post<ChatResponse>(`${this.baseUrl}/api/chat`, { question, conv_id: convId });
+  askLLM(question: string, convId?: string, useInternet?: boolean): Observable<ChatResponse> {
+    return this.http.post<ChatResponse>(`${this.baseUrl}/api/chat`, { question, conv_id: convId, use_web: useInternet });
   }
 }

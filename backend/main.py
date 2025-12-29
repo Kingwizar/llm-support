@@ -122,6 +122,7 @@ class ConversationCreate(BaseModel):
 class ChatRequest(BaseModel):
     question: str
     conv_id: Optional[str] = None
+    use_web: bool = False 
 
 class Citation(BaseModel):
     doc: Optional[str] = ""

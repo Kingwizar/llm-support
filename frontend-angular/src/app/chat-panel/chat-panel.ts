@@ -73,7 +73,7 @@ export class ChatPanelComponent implements OnInit {
     return DOMPurify.sanitize(html);
   }
 
-  onSendMessage(event: { text: string; files: File[] }) {
+  onSendMessage(event: { text: string; files: File[]; useInternet: boolean; }) {
     if (!this.activeConversation?.id && !this.activeConversation?._id) {
       this.chat.pushBotMessage('Aucune conversation active');
       return;
@@ -96,7 +96,7 @@ export class ChatPanelComponent implements OnInit {
         if (text.trim()) {
           this.messages = this.messages.filter(m => !m._welcome);
 
-          this.chat.askLLM(text, convId).subscribe({
+          this.chat.askLLM(text, convId, event.useInternet).subscribe({
             next: (resp) => {
               const markdownContent = (() => {
                 let md = '';

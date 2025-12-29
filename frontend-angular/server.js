@@ -1,3 +1,8 @@
+// backend/server.js (Express Gateway) — version safe (ne casse rien)
+// - Garde toutes tes routes /api existantes
+// - AJOUTE des alias sans /api pour Android (/chat, /message/:id, /conversations/:id/messages)
+// - Supprime le doublon /conversations/:id (DELETE) pour éviter comportements bizarres
+
 // ================== IMPORTS (CommonJS) ==================
 const express = require("express");
 const cors = require("cors");
@@ -7,6 +12,7 @@ const axios = require("axios");
 const FormData = require("form-data");
 const fs = require("fs");
 const multer = require("multer");
+
 
 // ================== CONFIG ==================
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
@@ -23,6 +29,7 @@ const upload = multer({ storage });
 // ================== EXPRESS INIT ==================
 const app = express();
 app.set("trust proxy", true);
+
 const PORT = process.env.APP_PORT || 3000;
 const FASTAPI_URL = process.env.FASTAPI_URL;
 
@@ -30,10 +37,6 @@ if (!FASTAPI_URL) {
   console.error("❌ FASTAPI_URL is missing in .env");
   process.exit(1);
 }
-
-const CORS_ORIGINS = process.env.CORS_ORIGINS?.split(",") || [
-  "http://localhost:4200",
-];
 
 app.use(express.json());
 app.use(
@@ -44,7 +47,6 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
-
 
 // ================== LOGGER ==================
 app.use((req, res, next) => {
@@ -60,7 +62,6 @@ app.use((req, res, next) => {
 
 // ================== HELPERS ==================
 function authHeaders(req, extra = {}) {
-  // Ne pas envoyer Authorization vide (certains serveurs n'aiment pas)
   const h = { ...extra };
   if (req.authHeader) h.Authorization = req.authHeader;
   return h;
@@ -69,10 +70,7 @@ function authHeaders(req, extra = {}) {
 function sendAxiosError(res, err, fallbackStatus = 500, fallbackMsg = "Proxy error") {
   const status = err?.response?.status || fallbackStatus;
   const data = err?.response?.data;
-
-  // renvoyer l'erreur FastAPI si possible
   if (data) return res.status(status).json(data);
-
   return res.status(status).json({ error: fallbackMsg });
 }
 
@@ -129,8 +127,7 @@ app.post("/conversations", async (req, res) => {
   }
 });
 
-// Renommage (ton Angular appelle /api/chat/messages/:id)
-app.put("/api/chat/messages/:id", async (req, res) => {
+app.put("/conversations/:id", async (req, res) => {
   try {
     const r = await axios.put(
       `${FASTAPI_URL}/conversations/${req.params.id}`,
@@ -143,6 +140,16 @@ app.put("/api/chat/messages/:id", async (req, res) => {
   }
 });
 
+app.delete("/conversations/:id", async (req, res) => {
+  try {
+    const r = await axios.delete(`${FASTAPI_URL}/conversations/${req.params.id}`, {
+      headers: authHeaders(req),
+    });
+    res.json(r.data || { success: true });
+  } catch (err) {
+    sendAxiosError(res, err, 400, "Delete failed");
+  }
+});
 // Suppression (ton Angular appelle /api/chat/messages/:id)
 app.delete("/api/chat/messages/:id", async (req, res) => {
   try {
@@ -174,11 +181,21 @@ app.delete("/conversations/:id", async (req, res) => {
   }
 });
 
+app.put("/api/chat/messages/:id", async (req, res) => {
+  try {
+    const r = await axios.put(
+      `${FASTAPI_URL}/conversations/${req.params.id}`,
+      { title: req.body.title },
+      { headers: authHeaders(req) }
+    );
+    res.json(r.data);
+  } catch (err) {
+    sendAxiosError(res, err, 400, "Rename failed");
+  }
+});
 
-// ✅ IMPORTANT: on SUPPRIME la route doublon suivante:
-// app.delete("/conversations/:id", ...)  <-- elle faisait doublon et pouvait créer des comportements bizarres
-
-// ================== MESSAGES ==================
+// ================== MESSAGES (WEB legacy /api) ==================
+// (ton Angular appelle /api/chat/messages/:id)
 app.get("/api/chat/messages/:id", async (req, res) => {
   try {
     const r = await axios.get(
@@ -191,28 +208,21 @@ app.get("/api/chat/messages/:id", async (req, res) => {
   }
 });
 
-app.put("/conversations/:id", async (req, res) => {
+// ✅ Alias Android (ne casse rien)
+// Android appelle /conversations/{id}/messages
+app.get("/conversations/:id/messages", async (req, res) => {
   try {
-    const r = await axios.put(
-      `${FASTAPI_URL}/conversations/${req.params.id}`,
-      { title: req.body.title },
-      {
-        headers: {
-          Authorization: req.authHeader
-        }
-      }
+    const r = await axios.get(
+      `${FASTAPI_URL}/conversations/${req.params.id}/messages`,
+      { headers: authHeaders(req) }
     );
-
     res.json(r.data);
-  } catch (e) {
-    res
-      .status(e.response?.status || 500)
-      .json(e.response?.data || { error: "Rename failed" });
+  } catch (err) {
+    sendAxiosError(res, err, 401, "Unauthorized");
   }
 });
 
-
-app.post("/api/chat/message/:id", upload.array("files"), async (req, res) => {
+async function forwardMessageToFastAPI(req, res) {
   const uploaded = Array.isArray(req.files) ? req.files : [];
 
   try {
@@ -226,24 +236,36 @@ app.post("/api/chat/message/:id", upload.array("files"), async (req, res) => {
       });
     }
 
-    const r = await axios.post(`${FASTAPI_URL}/message/${req.params.id}`, formData, {
-      headers: authHeaders(req, formData.getHeaders()),
-      maxBodyLength: Infinity,
-      maxContentLength: Infinity,
-    });
+    const r = await axios.post(
+      `${FASTAPI_URL}/message/${req.params.id}`,
+      formData,
+      {
+        headers: authHeaders(req, formData.getHeaders()),
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
+      }
+    );
 
     res.json(r.data);
   } catch (err) {
     sendAxiosError(res, err, 500, "Message send failed");
   } finally {
-    // ✅ Nettoyage des fichiers temporaires
     for (const f of uploaded) {
       try { fs.unlinkSync(f.path); } catch (_) {}
     }
   }
-});
+}
 
-// ================== CHAT RAG ==================
+
+// ================== SEND MESSAGE + FILES (WEB legacy /api) ==================
+app.post("/api/chat/message/:id", upload.array("files"), forwardMessageToFastAPI);
+
+// ✅ Alias Android (ne casse rien)
+// Android appelle /message/{id}
+app.post("/message/:id", upload.array("files"), forwardMessageToFastAPI);
+
+
+// ================== CHAT RAG (WEB legacy /api) ==================
 app.post("/api/chat", async (req, res) => {
   try {
     const r = await axios.post(`${FASTAPI_URL}/chat`, req.body, {
@@ -255,7 +277,20 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-// ================== FILE DOWNLOAD ==================
+// ✅ Alias Android (ne casse rien)
+// Android appelle /chat
+app.post("/chat", async (req, res) => {
+  try {
+    const r = await axios.post(`${FASTAPI_URL}/chat`, req.body, {
+      headers: authHeaders(req),
+    });
+    res.json(r.data);
+  } catch (err) {
+    sendAxiosError(res, err, 401, "Unauthorized");
+  }
+});
+
+// ================== FILE DOWNLOAD (WEB) ==================
 app.get("/api/chat/file/:id", async (req, res) => {
   try {
     const r = await axios({
@@ -277,6 +312,7 @@ app.get("/api/chat/file/:id", async (req, res) => {
   }
 });
 
+// ================== STATIC ANGULAR ==================
 const angularDist = path.join(
   __dirname,
   "../frontend-angular/dist/frontend-angular/browser"
@@ -285,7 +321,7 @@ const angularDist = path.join(
 app.use(express.static(angularDist));
 
 app.use((req, res, next) => {
-  if (req.path.startsWith("/api") || req.path.startsWith("/auth")) {
+  if (req.path.startsWith("/api") || req.path.startsWith("/auth") || req.path.startsWith("/conversations") || req.path.startsWith("/chat") || req.path.startsWith("/message")) {
     return res.status(404).json({ error: "API route not found" });
   }
   next();
@@ -294,7 +330,6 @@ app.use((req, res, next) => {
 app.use((req, res) => {
   res.sendFile(path.join(angularDist, "index.html"));
 });
-
 
 // ================== START SERVER ==================
 app.listen(PORT, "0.0.0.0", () => {

@@ -5,6 +5,9 @@
     type="text"
     placeholder="Écris ton message..."
     (keydown.enter)="onEnter($event)" />
+    
+
+  <button class="internet-btn" [class.active]="useInternet" (click)="toggleInternet()" title="Activer la recherche Internet"> 🌐 </button>
 
   <!-- Bouton d’ajout de fichiers -->
   <button class="upload-btn" (click)="fileInput.click()">📁</button>

@@ -11,41 +11,45 @@ import { CommonModule } from '@angular/common';
 })
 export class InputBar {
   @Input() convId?: string;
-  @Output() send = new EventEmitter<{ text: string; files: File[] }>();
+  @Output() send = new EventEmitter<{
+    text: string;
+    files: File[];
+    useInternet: boolean;
+  }>();
 
-  prompt: string = '';
+  prompt = '';
   selectedFiles: File[] = [];
+  useInternet = false;
 
-  /** Lorsqu’on sélectionne un ou plusieurs fichiers */
+  toggleInternet() {
+    this.useInternet = !this.useInternet;
+  }
+
+  sendMessage() {
+    if (!this.prompt.trim() && this.selectedFiles.length === 0) return;
+
+    this.send.emit({
+      text: this.prompt,
+      files: this.selectedFiles,
+      useInternet: this.useInternet
+    });
+
+    this.prompt = '';
+    this.selectedFiles = [];
+    this.useInternet = false; // reset après envoi (recommandé)
+  }
+
+  onEnter(event: Event) {
+    event.preventDefault();
+    this.sendMessage();
+  }
+  removeFile(index: number) {
+    this.selectedFiles.splice(index, 1);
+  }
   onFileSelect(event: Event) {
     const input = event.target as HTMLInputElement;
     if (!input.files) return;
     this.selectedFiles.push(...Array.from(input.files));
     input.value = '';
   }
-
-  /** Supprimer un fichier de la sélection */
-  removeFile(index: number) {
-    this.selectedFiles.splice(index, 1);
-  }
-
-  /** Émet le message vers le parent sans contact API */
-  sendMessage() {
-    console.log("InputBar → emit vers ChatPanel");
-    console.log("Texte:", this.prompt);
-    console.log("Fichiers:", this.selectedFiles.length);
-
-    if (!this.prompt.trim() && this.selectedFiles.length === 0) return;
-
-    this.send.emit({ text: this.prompt, files: this.selectedFiles });
-    this.prompt = '';
-    this.selectedFiles = [];
-  }
-  onEnter(event: Event) {
-  const keyboardEvent = event as KeyboardEvent;
-  keyboardEvent.preventDefault();
-  this.sendMessage();
-}
-
-
 }
