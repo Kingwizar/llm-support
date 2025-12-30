@@ -1,3 +1,4 @@
+// app/services/auth/auth.ts
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, tap } from 'rxjs';
@@ -7,59 +8,13 @@ import { AuthService as Auth0Service } from '@auth0/auth0-angular';
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private baseUrl = environment.serverUrl;
-  private tokenKey = 'auth_token';
 
   private currentUser$ = new BehaviorSubject<any | null>(null);
   user$ = this.currentUser$.asObservable();
 
-  constructor(
-    private http: HttpClient,
-    private auth0: Auth0Service
-  ) {}
+  constructor(private http: HttpClient, private auth0: Auth0Service) {}
 
-  // ===== AUTH LOCALE =====
-  login(email: string, password: string) {
-    return this.http
-      .post<any>(`${this.baseUrl}/auth/login`, { email, password })
-      .pipe(
-        tap(res => {
-          localStorage.setItem(this.tokenKey, res.access_token);
-        })
-      );
-  }
-
-  register(data: { username: string; email: string; password: string }) {
-    return this.http.post(`${this.baseUrl}/auth/register`, data);
-  }
-
-  // ===== UTILISATEUR =====
-  loadMe() {
-  console.log('📡 /auth/me called');
-  return this.http.get(`${this.baseUrl}/auth/me`).pipe(
-    tap(user => {
-      console.log('✅ /auth/me response:', user);
-      this.currentUser$.next(user);
-    })
-  );
-}
-
-  
-
-  logout() {
-  console.log('🚪 Logout');
-
-  localStorage.removeItem(this.tokenKey);
-  this.currentUser$.next(null);
-
-  this.auth0.logout({
-    logoutParams: {
-      returnTo: window.location.origin + '/login'
-    }
-  });
-}
-
-
-
+  private tokenKey = 'auth_token';
 
   getToken(): string | null {
     return localStorage.getItem(this.tokenKey);
@@ -69,21 +24,37 @@ export class AuthService {
     return !!this.getToken();
   }
 
-  // ===== AUTH0 =====
+  login(email: string, password: string) {
+    return this.http.post(`${this.baseUrl}/auth/login`, { email, password }, { withCredentials: true });
+  }
+
+  register(data: { username: string; email: string; password: string }) {
+    return this.http.post(`${this.baseUrl}/auth/register`, data, { withCredentials: true });
+  }
+
+  loadMe() {
+    return this.http.get(`${this.baseUrl}/auth/me`, { withCredentials: true }).pipe(
+      tap(user => this.currentUser$.next(user))
+    );
+  }
+
+  logout() {
+    this.currentUser$.next(null);
+    this.auth0.logout({ logoutParams: { returnTo: window.location.origin + '/login' } });
+  }
+
   loginWithAuth0() {
     return this.auth0.loginWithRedirect();
   }
 
   loadAuth0Token() {
-    return this.auth0.getAccessTokenSilently().pipe(
-      tap(token => {
-        localStorage.setItem(this.tokenKey, token);
-      })
-    );
+    // on ne stocke pas le token en localStorage en mode cookie
+    return this.auth0.getAccessTokenSilently().pipe(tap(() => {}));
   }
+  
 }
 
-// ===== CONFIG AUTH0 =====
+// ✅ IMPORTANT : export nommé
 export const auth0Config = {
   domain: 'dev-5xqrzsdislhri5jj.us.auth0.com',
   clientId: 'oLJYZBFTXTrIWpY0y9oOxXfBw3dJxlwe',
@@ -93,6 +64,3 @@ export const auth0Config = {
     scope: 'openid profile email'
   }
 };
-
-
-

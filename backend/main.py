@@ -460,7 +460,7 @@ async def chat(req: ChatRequest, user=Depends(get_current_user)):
 
 
     # 👉 Le web / RAG global ne sont utilisés QUE si aucun document utilisateur pertinent
-    use_web = len(conv_hits) == 0
+    use_web = req.use_web is True
 
     # 2️⃣ RAG global + web (conditionnel)
     global_pack = answer_with_rag_or_web(req.question) if use_web else {}
