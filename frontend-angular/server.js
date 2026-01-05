@@ -19,7 +19,10 @@ const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const csrf = require("csurf");
 const cookieParser = require("cookie-parser");
+const client = require("prom-client");
 
+const register = new client.Registry();
+client.collectDefaultMetrics({ register });
 // ================== CONFIG ==================
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
@@ -87,7 +90,11 @@ app.use(
         fontSrc: ["'self'", "data:"],
 
         // ✅ Auth0 XHR/fetch + backend
-        connectSrc: ["'self'", `https://${AUTH0_DOMAIN}`],
+        connectSrc: [
+          "'self'",
+          `https://${AUTH0_DOMAIN}`,
+          process.env.PUBLIC_BASE_URL || "'self'"
+        ],
 
         // ✅ Auth0 iframe/web_message
         frameSrc: ["'self'", `https://${AUTH0_DOMAIN}`],
@@ -444,8 +451,13 @@ app.get("/api/chat/file/:id", async (req, res) => {
   }
 });
 
+app.get("/metrics", async (req, res) => {
+  res.set("Content-Type", register.contentType);
+  res.end(await register.metrics());
+});
+
 // ================== STATIC ANGULAR ==================
-const angularDist = path.join(__dirname, "../frontend-angular/dist/frontend-angular/browser");
+const angularDist = path.join(__dirname, "dist/frontend-angular/browser");app.use(express.static(angularDist));
 app.use(express.static(angularDist));
 
 app.use((req, res, next) => {

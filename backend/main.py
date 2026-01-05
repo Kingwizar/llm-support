@@ -29,6 +29,9 @@ from llm.rag_core import (
 from llm.prompt_builder import (
     build_runtime_prompt_with_memory
 )
+from prometheus_fastapi_instrumentator import Instrumentator
+
+
 
 # ======================================================
 # ----------------- CONFIGURATION ----------------------
@@ -53,6 +56,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 app = FastAPI(title="LLM Chat API")
 logger = logging.getLogger("uvicorn.error")
+Instrumentator().instrument(app).expose(app)
 
 # ======================================================
 # ----------------- STATIC + CORS ----------------------
@@ -92,7 +96,14 @@ AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN", "dev-5xqrzsdislhri5jj.us.auth0.com")
 API_AUDIENCE = os.getenv("AUTH0_AUDIENCE", "https://llm-support-api")
 
 # cache JWKS (simple)
-jwks = requests.get(f"https://{AUTH0_DOMAIN}/.well-known/jwks.json", timeout=10).json()
+try:
+    jwks = requests.get(
+        f"https://{AUTH0_DOMAIN}/.well-known/jwks.json",
+        timeout=10
+    ).json()
+except Exception as e:
+    logger.error("❌ JWKS fetch failed: %s", e)
+    jwks = {"keys": []}
 
 
 
