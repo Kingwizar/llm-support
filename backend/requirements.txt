@@ -4,10 +4,12 @@ uvicorn[standard]
 
 # ================= SECURITY =================
 python-jose
-passlib[bcrypt]
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
 python-dotenv
 email-validator
 python-multipart
+
 # ================= DATABASE =================
 motor
 pymongo
@@ -35,6 +37,7 @@ faster-whisper
 soundfile
 kokoro
 prometheus-fastapi-instrumentator
+
 # ================= UTILS =================
 scipy
 tqdm
