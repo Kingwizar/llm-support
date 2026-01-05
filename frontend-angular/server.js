@@ -1,7 +1,10 @@
-// backend/server.js (Express Gateway) — version safe (ne casse rien)
-// - Garde toutes tes routes /api existantes
-// - AJOUTE des alias sans /api pour Android (/chat, /message/:id, /conversations/:id/messages)
-// - Supprime le doublon /conversations/:id (DELETE) pour éviter comportements bizarres
+// backend/server.js (Express Gateway) — CORRIGÉ COMPLET
+// ✅ Auth locale + Auth0 + CSRF propre
+// ✅ Cookie session fiable (ngrok/https ok)
+// ✅ CSRF EXCLU des routes /auth/*
+// ✅ CSP compatible Auth0 + Angular
+// ✅ RateLimit corrigé (trust proxy non permissif)
+// ✅ Conserve toutes tes routes existantes + alias Android
 
 // ================== IMPORTS (CommonJS) ==================
 const express = require("express");
@@ -16,12 +19,24 @@ const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const csrf = require("csurf");
 const cookieParser = require("cookie-parser");
-const IS_DEV = process.env.APP_ENV !== "prod";
-
 
 // ================== CONFIG ==================
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
+const PORT = process.env.APP_PORT || 3000;
+const FASTAPI_URL = process.env.FASTAPI_URL;
+const AUTH0_DOMAIN =
+  process.env.AUTH0_DOMAIN || "dev-5xqrzsdislhri5jj.us.auth0.com";
+
+const APP_ENV = process.env.APP_ENV || "dev";
+const IS_DEV = APP_ENV !== "prod";
+
+if (!FASTAPI_URL) {
+  console.error("❌ FASTAPI_URL is missing in .env");
+  process.exit(1);
+}
+
+// ================== UPLOAD ==================
 const uploadDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 
@@ -33,24 +48,16 @@ const upload = multer({ storage });
 
 // ================== EXPRESS INIT ==================
 const app = express();
-app.set("trust proxy", true);
 
-const PORT = process.env.APP_PORT;
-const FASTAPI_URL = process.env.FASTAPI_URL;
-
-if (!FASTAPI_URL) {
-  console.error("❌ FASTAPI_URL is missing in .env");
-  process.exit(1);
-}
-
-
+// ✅ IMPORTANT: ne mets PAS true (express-rate-limit refuse)
+app.set("trust proxy", 1);
 
 // ================== BODY + COOKIES ==================
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-
+// ================== CORS ==================
 app.use(
   cors({
     origin: true, // ✅ accepte dynamiquement l’origine (ngrok)
@@ -60,13 +67,7 @@ app.use(
   })
 );
 
-
 // ================== HELMET / CSP ==================
-// Fix Auth0 bloqué: il faut autoriser Auth0 dans frame-src + connect-src
-// et autoriser style-src (Angular charge parfois des styles)
-// On laisse script-src 'self' (pas de inline scripts)
-const AUTH0_DOMAIN = process.env.AUTH0_DOMAIN || "dev-5xqrzsdislhri5jj.us.auth0.com";
-
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -76,7 +77,8 @@ app.use(
         baseUri: ["'self'"],
         objectSrc: ["'none'"],
 
-        // Angular bundles
+        // ✅ Angular + certains attributs runtime
+        scriptSrc: ["'self'", "'unsafe-inline'"],
         scriptSrcAttr: ["'self'", "'unsafe-inline'"],
 
         styleSrc: ["'self'", "'unsafe-inline'"],
@@ -84,20 +86,17 @@ app.use(
         imgSrc: ["'self'", "data:", "blob:"],
         fontSrc: ["'self'", "data:"],
 
-        // Requêtes XHR/fetch vers ton propre domaine + Auth0
+        // ✅ Auth0 XHR/fetch + backend
         connectSrc: ["'self'", `https://${AUTH0_DOMAIN}`],
 
-        // Auth0 utilise parfois des iframes / web_message
+        // ✅ Auth0 iframe/web_message
         frameSrc: ["'self'", `https://${AUTH0_DOMAIN}`],
 
-        // Form action
         formAction: ["'self'"],
-
-        // Media (si audio blob)
         mediaSrc: ["'self'", "blob:"],
       },
     },
-    crossOriginEmbedderPolicy: false, // évite certains blocages avec iframes/ressources
+    crossOriginEmbedderPolicy: false,
   })
 );
 
@@ -108,6 +107,8 @@ app.use(
     max: 300,
     standardHeaders: true,
     legacyHeaders: false,
+    // ✅ clé stable derrière proxy
+    keyGenerator: (req) => req.ip,
   })
 );
 
@@ -124,6 +125,10 @@ app.use((req, res, next) => {
 });
 
 // ================== HELPERS ==================
+function isHttps(req) {
+  return req.secure || req.headers["x-forwarded-proto"] === "https";
+}
+
 function authHeaders(req, extra = {}) {
   const h = { ...extra };
 
@@ -131,7 +136,7 @@ function authHeaders(req, extra = {}) {
   if (req.cookies?.session) {
     h.Authorization = `Bearer ${req.cookies.session}`;
   } else if (req.authHeader) {
-    // fallback legacy
+    // fallback (si token envoyé par header)
     h.Authorization = req.authHeader;
   }
 
@@ -145,33 +150,50 @@ function sendAxiosError(res, err, fallbackStatus = 500, fallbackMsg = "Proxy err
   return res.status(status).json({ error: fallbackMsg });
 }
 
-// ================== AUTH ROUTES ==================
+function setSessionCookie(req, res, token) {
+  // ✅ sur ngrok (https) => secure MUST be true
+  const secureCookie = isHttps(req);
+
+  res.cookie("session", token, {
+    httpOnly: true,
+    secure: secureCookie,
+    sameSite: "Lax",
+    maxAge: 24 * 60 * 60 * 1000,
+  });
+}
+
+// ================== DEBUG (OPTIONNEL MAIS UTILE) ==================
+app.get("/debug/headers", (req, res) => {
+  res.json({
+    https: isHttps(req),
+    ip: req.ip,
+    cookies: req.cookies || {},
+    authHeader: req.headers.authorization || null,
+  });
+});
+
+// ================== AUTH ROUTES (⚠️ PAS DE CSRF ICI) ==================
 app.post("/auth/login", async (req, res) => {
   try {
     const r = await axios.post(`${FASTAPI_URL}/auth/login`, req.body);
 
-    // NOTE: secure:true => nécessite HTTPS (ngrok OK)
-    res.cookie("session", r.data.access_token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "Lax", // plus compatible Auth0/redirects que Strict
-      maxAge: 24 * 60 * 60 * 1000,
-    });
+    // ✅ Cookie session pour WEB
+    setSessionCookie(req, res, r.data.access_token);
 
     const isMobile =
-  req.headers["x-client-type"] === "android" ||
-  req.headers["user-agent"]?.toLowerCase().includes("okhttp");
+      req.headers["x-client-type"] === "android" ||
+      req.headers["user-agent"]?.toLowerCase().includes("okhttp");
 
-if (isMobile) {
-  // 📱 ANDROID : retourne le token
-  res.json({
-    access_token: r.data.access_token,
-    token_type: "bearer",
-  });
-} else {
-  // 🌐 WEB : cookie HttpOnly uniquement
-  res.json({ success: true });
-}
+    if (isMobile) {
+      // 📱 ANDROID : retourne le token
+      res.json({
+        access_token: r.data.access_token,
+        token_type: "bearer",
+      });
+    } else {
+      // 🌐 WEB : cookie HttpOnly
+      res.json({ success: true });
+    }
   } catch (err) {
     sendAxiosError(res, err, 401, "Login failed");
   }
@@ -186,28 +208,53 @@ app.post("/auth/register", async (req, res) => {
   }
 });
 
-// =====================================================
-// ================== CSRF (PROTECTED) =================
-// =====================================================
-// On active CSRF après login/register
+// ✅ BRIDGE AUTH0 → SESSION (⚠️ PAS DE CSRF ICI)
+app.post("/auth/auth0", async (req, res) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Missing Authorization" });
+  }
+
+  try {
+    // 🔁 On valide le token Auth0 en appelant FastAPI /auth/me
+    await axios.get(`${FASTAPI_URL}/auth/me`, {
+      headers: { Authorization: authHeader },
+    });
+
+    // 🔐 Créer la session backend (cookie)
+    const token = authHeader.replace("Bearer ", "").trim();
+    setSessionCookie(req, res, token);
+
+    res.json({ success: true });
+  } catch (e) {
+    return res.status(401).json({ error: "Invalid Auth0 token" });
+  }
+});
+
+// ================== CSRF (PROTECTED) ==================
+// ✅ CSRF appliqué à tout le reste (pas aux routes /auth/*)
 const csrfProtection = csrf({
   cookie: {
     key: "_csrf",
-    httpOnly: false,           // ✅ OBLIGATOIRE
-    secure: !IS_DEV,           // false en dev, true en prod/ngrok
+    httpOnly: false, // ✅ Angular doit pouvoir le lire si besoin (mais tu l’envoies via endpoint)
+    secure: !IS_DEV, // prod true (si tu mets APP_ENV=prod)
     sameSite: "Lax",
   },
 });
 
-app.use(csrfProtection);
+// ✅ middleware conditionnel : exclure /auth/*
+app.use((req, res, next) => {
+  if (req.path.startsWith("/auth/")) return next();
+  return csrfProtection(req, res, next);
+});
 
 // Endpoint pour Angular: récupérer un token CSRF
 app.get("/csrf-token", (req, res) => {
   res.json({ csrfToken: req.csrfToken() });
 });
 
-
-
+// ================== PROTECTED ROUTES ==================
 app.get("/auth/me", async (req, res) => {
   try {
     const r = await axios.get(`${FASTAPI_URL}/auth/me`, {
@@ -266,6 +313,7 @@ app.delete("/conversations/:id", async (req, res) => {
   }
 });
 
+// ================== WEB legacy /api ==================
 app.delete("/api/chat/messages/:id", async (req, res) => {
   try {
     const r = await axios.delete(`${FASTAPI_URL}/conversations/${req.params.id}`, {
@@ -277,8 +325,6 @@ app.delete("/api/chat/messages/:id", async (req, res) => {
   }
 });
 
-// ================== MESSAGES (WEB legacy /api) ==================
-// (ton Angular appelle /api/chat/messages/:id)
 app.put("/api/chat/messages/:id", async (req, res) => {
   try {
     const r = await axios.put(
@@ -292,22 +338,6 @@ app.put("/api/chat/messages/:id", async (req, res) => {
   }
 });
 
-// ✅ Alias Android (ne casse rien)
-// Android appelle /conversations/{id}/messages
-app.get("/conversations/:id/messages", async (req, res) => {
-  try {
-    const r = await axios.get(
-      `${FASTAPI_URL}/conversations/${req.params.id}/messages`,
-      { headers: authHeaders(req) }
-    );
-    res.json(r.data);
-  } catch (err) {
-    sendAxiosError(res, err, 401, "Unauthorized");
-  }
-});
-
-// ================== MESSAGES (WEB legacy /api) ==================
-// Angular appelle /api/chat/messages/:id
 app.get("/api/chat/messages/:id", async (req, res) => {
   try {
     const r = await axios.get(
@@ -320,7 +350,20 @@ app.get("/api/chat/messages/:id", async (req, res) => {
   }
 });
 
+// ✅ Alias Android
+app.get("/conversations/:id/messages", async (req, res) => {
+  try {
+    const r = await axios.get(
+      `${FASTAPI_URL}/conversations/${req.params.id}/messages`,
+      { headers: authHeaders(req) }
+    );
+    res.json(r.data);
+  } catch (err) {
+    sendAxiosError(res, err, 401, "Unauthorized");
+  }
+});
 
+// ================== MESSAGE + FILES ==================
 async function forwardMessageToFastAPI(req, res) {
   const uploaded = Array.isArray(req.files) ? req.files : [];
 
@@ -335,36 +378,31 @@ async function forwardMessageToFastAPI(req, res) {
       });
     }
 
-    const r = await axios.post(
-      `${FASTAPI_URL}/message/${req.params.id}`,
-      formData,
-      {
-        headers: authHeaders(req, formData.getHeaders()),
-        maxBodyLength: Infinity,
-        maxContentLength: Infinity,
-      }
-    );
+    const r = await axios.post(`${FASTAPI_URL}/message/${req.params.id}`, formData, {
+      headers: authHeaders(req, formData.getHeaders()),
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+    });
 
     res.json(r.data);
   } catch (err) {
     sendAxiosError(res, err, 500, "Message send failed");
   } finally {
     for (const f of uploaded) {
-      try { fs.unlinkSync(f.path); } catch (_) {}
+      try {
+        fs.unlinkSync(f.path);
+      } catch (_) {}
     }
   }
 }
 
-
-// ================== SEND MESSAGE + FILES (WEB legacy /api) ==================
+// WEB legacy /api
 app.post("/api/chat/message/:id", upload.array("files"), forwardMessageToFastAPI);
 
-// ✅ Alias Android (ne casse rien)
-// Android appelle /message/{id}
+// ✅ Alias Android
 app.post("/message/:id", upload.array("files"), forwardMessageToFastAPI);
 
-
-// ================== CHAT RAG (WEB legacy /api) ==================
+// ================== CHAT RAG ==================
 app.post("/api/chat", async (req, res) => {
   try {
     const r = await axios.post(`${FASTAPI_URL}/chat`, req.body, {
@@ -376,8 +414,7 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-// ✅ Alias Android (ne casse rien)
-// Android appelle /chat
+// ✅ Alias Android
 app.post("/chat", async (req, res) => {
   try {
     const r = await axios.post(`${FASTAPI_URL}/chat`, req.body, {
@@ -389,9 +426,7 @@ app.post("/chat", async (req, res) => {
   }
 });
 
-// =====================================================
-// ================== FILE DOWNLOAD (WEB) ==============
-// =====================================================
+// ================== FILE DOWNLOAD ==================
 app.get("/api/chat/file/:id", async (req, res) => {
   try {
     const r = await axios({
@@ -403,16 +438,13 @@ app.get("/api/chat/file/:id", async (req, res) => {
 
     res.setHeader("Content-Type", r.headers["content-type"] || "application/octet-stream");
     res.setHeader("Content-Disposition", r.headers["content-disposition"] || "attachment");
-
     r.data.pipe(res);
   } catch (err) {
     sendAxiosError(res, err, 500, "File download failed");
   }
 });
 
-// =====================================================
-// ================== STATIC ANGULAR ===================
-// =====================================================
+// ================== STATIC ANGULAR ==================
 const angularDist = path.join(__dirname, "../frontend-angular/dist/frontend-angular/browser");
 app.use(express.static(angularDist));
 
@@ -423,13 +455,13 @@ app.use((req, res, next) => {
     req.path.startsWith("/conversations") ||
     req.path.startsWith("/chat") ||
     req.path.startsWith("/message") ||
-    req.path.startsWith("/csrf-token")
+    req.path.startsWith("/csrf-token") ||
+    req.path.startsWith("/debug")
   ) {
     return res.status(404).json({ error: "API route not found" });
   }
   next();
 });
-
 
 app.use((req, res) => {
   res.sendFile(path.join(angularDist, "index.html"));
@@ -439,4 +471,5 @@ app.use((req, res) => {
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Express running → http://0.0.0.0:${PORT}`);
   console.log(`Connected FastAPI → ${FASTAPI_URL}`);
+  console.log(`APP_ENV=${APP_ENV} (IS_DEV=${IS_DEV})`);
 });

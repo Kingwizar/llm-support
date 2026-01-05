@@ -9,6 +9,7 @@ import { provideAuth0 } from '@auth0/auth0-angular';
 import { auth0Config } from './app/services/auth/auth';
 
 import { csrfInterceptor } from './app/services/interceptors/csrf-interceptor';
+import { authInterceptor } from './app/services/interceptors/auth-interceptor';
 
 console.log('🟣 APP BOOTSTRAP');
 console.log('🟣 window.location.href =', window.location.href);
@@ -19,7 +20,8 @@ bootstrapApplication(App, {
 
     provideHttpClient(
       withInterceptors([
-        csrfInterceptor // ✅ CSRF + withCredentials
+        csrfInterceptor,
+        authInterceptor
       ])
     ),
 

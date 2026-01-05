@@ -24,11 +24,12 @@ export class App implements OnInit {
     // ✅ 1) Toujours récupérer CSRF token au boot
     try {
       const data = await firstValueFrom(
-        this.http.get<{ csrfToken: string }>(
-          `${environment.serverUrl}/csrf-token`
-        )
+        this.http.get<{ csrfToken: string }>('/csrf-token', {
+          withCredentials: true
+        })
       );
       localStorage.setItem('csrf_token', data.csrfToken);
+
       console.log('✅ CSRF token loaded');
     } catch (e) {
       console.warn('❌ CSRF token load failed', e);
