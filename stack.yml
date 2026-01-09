@@ -1,0 +1,137 @@
+version: "3.9"
+
+services:
+  frontend:
+    image: npone/frontend:1.0
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.docker
+    networks:
+      - app_net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  backend:
+    image: npone/backend:1.2
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env.docker
+    networks:
+      - app_net
+      - mon_net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    configs:
+      - source: prometheus_yml
+        target: /etc/prometheus/prometheus.yml
+    networks:
+      - mon_net
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SERVER_ROOT_URL=http://grafana:3000
+      - GF_SERVER_SERVE_FROM_SUB_PATH=false
+      - GF_SECURITY_COOKIE_SECURE=false
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - mon_net
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+  loki:
+    image: grafana/loki:2.9.8
+    command: -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "3100:3100"
+    networks:
+      - mon_net
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+  mongo:
+    image: mongo:6
+    volumes:
+      - mongo_data:/data/db
+    networks: [app_net]
+    deploy:
+      replicas: 1
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks: [app_net]
+    deploy:
+      replicas: 1
+
+  promtail:
+    image: grafana/promtail:2.9.8
+    environment:
+      - DOCKER_API_VERSION=1.44
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    configs:
+      - source: promtail_yml
+        target: /etc/promtail/promtail.yml
+    command: -config.file=/etc/promtail/promtail.yml
+    networks:
+      - mon_net
+    deploy:
+      mode: global
+      restart_policy:
+        condition: on-failure
+
+configs:
+  prometheus_yml:
+    file: ./monitoring/prometheus.yml
+  promtail_yml:
+    file: ./monitoring/promtail.yml
+
+networks:
+  app_net:
+    driver: overlay
+  mon_net:
+    driver: overlay
+
+volumes:
+  grafana_data:
+  mongo_data:
+  ollama_data:

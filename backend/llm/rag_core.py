@@ -14,7 +14,7 @@ from llm.web_search import simple_web_search
 from llm.ai_chat.voice_agent_prompt import build_voice_agent_prompt
 
 # ==================== CONSTANTS ====================
-OLLAMA_BASE = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
+OLLAMA_BASE = os.getenv("OLLAMA_BASE_URL", "http://npone_ollama:11434")
 
 OLLAMA_URL = f"{OLLAMA_BASE}/api/generate"
 OLLAMA_CHAT_URL = f"{OLLAMA_BASE}/api/chat"
@@ -27,7 +27,7 @@ CHUNK_OVERLAP = 100
 TOP_K_DEFAULT = 4
 EMB_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
-OLLAMA_URL = "http://ollama:11434/api/generate"
+OLLAMA_URL = "http://npone_ollama:11434/api/generate"
 # ==================== TEXT & CHUNKING ====================
 
 def chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> List[str]:
