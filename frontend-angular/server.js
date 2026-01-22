@@ -1,10 +1,5 @@
 // backend/server.js (Express Gateway) — CORRIGÉ COMPLET
-// ✅ Auth locale + Auth0 + CSRF propre
-// ✅ Cookie session fiable (ngrok/https ok)
-// ✅ CSRF EXCLU des routes /auth/*
-// ✅ CSP compatible Auth0 + Angular
-// ✅ RateLimit corrigé (trust proxy non permissif)
-// ✅ Conserve toutes tes routes existantes + alias Android
+
 
 // ================== IMPORTS (CommonJS) ==================
 const express = require("express");
@@ -52,7 +47,6 @@ const upload = multer({ storage });
 // ================== EXPRESS INIT ==================
 const app = express();
 
-// ✅ IMPORTANT: ne mets PAS true (express-rate-limit refuse)
 app.set("trust proxy", 1);
 
 // ================== BODY + COOKIES ==================
@@ -63,7 +57,7 @@ app.use(cookieParser());
 // ================== CORS ==================
 app.use(
   cors({
-    origin: true, // ✅ accepte dynamiquement l’origine (ngrok)
+    origin: true,
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"],
@@ -114,7 +108,6 @@ app.use(
     max: 300,
     standardHeaders: true,
     legacyHeaders: false,
-    // ✅ clé stable derrière proxy
     keyGenerator: (req) => req.ip,
   })
 );
@@ -158,7 +151,7 @@ function sendAxiosError(res, err, fallbackStatus = 500, fallbackMsg = "Proxy err
 }
 
 function setSessionCookie(req, res, token) {
-  // ✅ sur ngrok (https) => secure MUST be true
+  //  sur ngrok (https) => secure MUST be true
   const secureCookie = isHttps(req);
 
   res.cookie("session", token, {
@@ -179,12 +172,42 @@ app.get("/debug/headers", (req, res) => {
   });
 });
 
+const httpInFlight = new client.Gauge({
+  name: "http_requests_in_flight",
+  help: "Nombre de requêtes HTTP en cours",
+  labelNames: ["method", "route"],
+});
+register.registerMetric(httpInFlight);
+
+app.use((req, res, next) => {
+  const start = Date.now();
+
+  res.on("finish", () => {
+    const log = {
+      ts: new Date().toISOString(),
+      method: req.method,
+      path: req.originalUrl,
+      status: res.statusCode,
+      duration_ms: Date.now() - start,
+      ip: req.ip,
+      user_agent: req.headers["user-agent"],
+    };
+
+    console.log(JSON.stringify(log));
+  });
+
+  next();
+});
+
+
+
+
 // ================== AUTH ROUTES (⚠️ PAS DE CSRF ICI) ==================
 app.post("/auth/login", async (req, res) => {
   try {
     const r = await axios.post(`${FASTAPI_URL}/auth/login`, req.body);
 
-    // ✅ Cookie session pour WEB
+    //  Cookie session pour WEB
     setSessionCookie(req, res, r.data.access_token);
 
     const isMobile =
@@ -215,7 +238,7 @@ app.post("/auth/register", async (req, res) => {
   }
 });
 
-// ✅ BRIDGE AUTH0 → SESSION (⚠️ PAS DE CSRF ICI)
+//  BRIDGE AUTH0 → SESSION (⚠️ PAS DE CSRF ICI)
 app.post("/auth/auth0", async (req, res) => {
   const authHeader = req.headers.authorization;
 
@@ -224,12 +247,12 @@ app.post("/auth/auth0", async (req, res) => {
   }
 
   try {
-    // 🔁 On valide le token Auth0 en appelant FastAPI /auth/me
+    //  On valide le token Auth0 en appelant FastAPI /auth/me
     await axios.get(`${FASTAPI_URL}/auth/me`, {
       headers: { Authorization: authHeader },
     });
 
-    // 🔐 Créer la session backend (cookie)
+    //  Créer la session backend (cookie)
     const token = authHeader.replace("Bearer ", "").trim();
     setSessionCookie(req, res, token);
 
@@ -240,24 +263,35 @@ app.post("/auth/auth0", async (req, res) => {
 });
 
 // ================== CSRF (PROTECTED) ==================
-// ✅ CSRF appliqué à tout le reste (pas aux routes /auth/*)
+//  CSRF appliqué à tout le reste (pas aux routes /auth/*)
 const csrfProtection = csrf({
   cookie: {
     key: "_csrf",
-    httpOnly: false, // ✅ Angular doit pouvoir le lire si besoin (mais tu l’envoies via endpoint)
+    httpOnly: false, //  Angular doit pouvoir le lire si besoin (mais tu l’envoies via endpoint)
     secure: !IS_DEV, // prod true (si tu mets APP_ENV=prod)
     sameSite: "Lax",
   },
 });
 
-// ✅ middleware conditionnel : exclure /auth/*
+//  middleware conditionnel : exclure /auth/*
 app.use((req, res, next) => {
+  // ❌ Pas de CSRF pour /auth/*
   if (req.path.startsWith("/auth/")) return next();
+
+  // ❌ Pas de CSRF pour Android
+  const isAndroid =
+    req.headers["x-client-type"] === "android" ||
+    req.headers["user-agent"]?.toLowerCase().includes("okhttp");
+
+  if (isAndroid) return next();
+
+  // ✅ CSRF uniquement pour Web
   return csrfProtection(req, res, next);
 });
 
+
 // Endpoint pour Angular: récupérer un token CSRF
-app.get("/csrf-token", (req, res) => {
+app.get("/csrf-token", csrfProtection,(req, res) => {
   res.json({ csrfToken: req.csrfToken() });
 });
 
@@ -357,7 +391,7 @@ app.get("/api/chat/messages/:id", async (req, res) => {
   }
 });
 
-// ✅ Alias Android
+//  Alias Android
 app.get("/conversations/:id/messages", async (req, res) => {
   try {
     const r = await axios.get(
@@ -406,7 +440,7 @@ async function forwardMessageToFastAPI(req, res) {
 // WEB legacy /api
 app.post("/api/chat/message/:id", upload.array("files"), forwardMessageToFastAPI);
 
-// ✅ Alias Android
+//  Alias Android
 app.post("/message/:id", upload.array("files"), forwardMessageToFastAPI);
 
 // ================== CHAT RAG ==================
@@ -421,7 +455,7 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-// ✅ Alias Android
+//  Alias Android
 app.post("/chat", async (req, res) => {
   try {
     const r = await axios.post(`${FASTAPI_URL}/chat`, req.body, {
@@ -477,6 +511,10 @@ app.use((req, res, next) => {
 
 app.use((req, res) => {
   res.sendFile(path.join(angularDist, "index.html"));
+});
+app.use((err, req, res, next) => {
+  console.error("🔥 Express error:", err);
+  res.status(500).json({ error: "Internal server error", detail: String(err?.message || err) });
 });
 
 // ================== START SERVER ==================

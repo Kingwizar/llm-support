@@ -40,6 +40,8 @@ export class ChatPanelComponent implements OnInit {
     private history: HistoryService,
     private chat: ChatService
   ) {}
+  showScrollButton = false;
+
 
   ngOnInit() {
     this.history.activeConversation$.subscribe(conv => {
@@ -63,6 +65,7 @@ export class ChatPanelComponent implements OnInit {
           }
 
           this.scrollToBottom();
+          this.attachScrollListener();
         });
       }
     });
@@ -133,13 +136,33 @@ export class ChatPanelComponent implements OnInit {
     });
   }
 
-  scrollToBottom() {
-    setTimeout(() => {
-      const el = this.messagesContainer?.nativeElement;
-      if (!el) return;
-      el.scrollTop = el.scrollHeight;
-    }, 0);
-  }
+  attachScrollListener() {
+  setTimeout(() => {
+    const el = this.messagesContainer?.nativeElement;
+    if (!el) return;
+
+    el.addEventListener('scroll', () => {
+      const threshold = 120;
+      this.showScrollButton =
+        el.scrollHeight - el.scrollTop - el.clientHeight > threshold;
+    });
+  }, 0);
+}
+
+scrollToBottom(force = false) {
+  setTimeout(() => {
+    const el = this.messagesContainer?.nativeElement;
+    if (!el) return;
+
+    el.scrollTo({
+      top: el.scrollHeight,
+      behavior: force ? 'smooth' : 'auto'
+    });
+
+    this.showScrollButton = false;
+  }, 0);
+}
+
 
   getFileIcon(nameOrType?: string): string {
     const name = nameOrType?.toLowerCase() || '';

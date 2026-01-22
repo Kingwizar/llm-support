@@ -2,20 +2,21 @@ version: "3.9"
 
 services:
   frontend:
-    image: npone/frontend:1.0
+    image: npone/frontend:1.5
     ports:
       - "3000:3000"
     env_file:
       - .env.docker
     networks:
       - app_net
+      - mon_net
     deploy:
       replicas: 1
       restart_policy:
         condition: on-failure
 
   backend:
-    image: npone/backend:1.2
+    image: npone/backend:1.6
     ports:
       - "8000:8000"
     env_file:
@@ -33,7 +34,7 @@ services:
     ports:
       - "9090:9090"
     configs:
-      - source: prometheus_yml
+      - source: prometheus_yml_v2
         target: /etc/prometheus/prometheus.yml
     networks:
       - mon_net
@@ -100,6 +101,18 @@ services:
     networks: [app_net]
     deploy:
       replicas: 1
+  
+  node_exporter:
+    image: prom/node-exporter:latest
+    command:
+      - '--path.rootfs=/host'
+    volumes:
+      - /:/host:ro,rslave
+    networks:
+      - mon_net
+    deploy:
+      mode: global
+
 
   promtail:
     image: grafana/promtail:2.9.8
@@ -120,7 +133,7 @@ services:
         condition: on-failure
 
 configs:
-  prometheus_yml:
+  prometheus_yml_v2:
     file: ./monitoring/prometheus.yml
   promtail_yml:
     file: ./monitoring/promtail.yml
