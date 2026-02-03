@@ -2,7 +2,6 @@ import { Component, OnInit, inject } from '@angular/core';
 import { RouterOutlet, Router } from '@angular/router';
 import { AuthService } from './services/auth/auth';
 import { AuthService as Auth0Service } from '@auth0/auth0-angular';
-import { environment } from '../environments/environment';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 
@@ -19,9 +18,8 @@ export class App implements OnInit {
   private auth = inject(AuthService);
 
   async ngOnInit() {
-    console.log('🟣 APP INIT');
 
-    // ✅ 1) Toujours récupérer CSRF token au boot
+
     try {
       const data = await firstValueFrom(
         this.http.get<{ csrfToken: string }>('/csrf-token', {
@@ -30,12 +28,11 @@ export class App implements OnInit {
       );
       localStorage.setItem('csrf_token', data.csrfToken);
 
-      console.log('✅ CSRF token loaded');
+      console.log(' CSRF token loaded');
     } catch (e) {
-      console.warn('❌ CSRF token load failed', e);
+      console.warn(' CSRF token load failed', e);
     }
 
-    // ✅ 2) Auth0
     this.auth0.isAuthenticated$.subscribe(isAuth => {
       if (isAuth) {
         this.auth.loadAuth0Token().subscribe();

@@ -41,4 +41,4 @@ with open(os.path.join(INDEX_DIR, "records.jsonl"), "w", encoding="utf8") as f:
     for r in records:
         f.write(json.dumps(r) + "\n")
 
-print("✅ RAG reconstruit. Documents indexés :", len(records))
+print(" RAG reconstruit. Documents indexés :", len(records))

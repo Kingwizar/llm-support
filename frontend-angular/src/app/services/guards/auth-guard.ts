@@ -6,9 +6,9 @@ export const authGuard: CanActivateFn = (route, state) => {
   const auth = inject(AuthService);
   const router = inject(Router);
 
-  // ✅ Toujours autoriser le callback
+
   if (state.url.startsWith('/callback')) {
-    console.log('🟡 Guard bypass for callback');
+    console.log(' Guard bypass for callback');
     return true;
   }
 

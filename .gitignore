@@ -28,7 +28,6 @@ frontend-angular/dist/
 backend-history/node_modules/
 backend-history/dist/
 frontend-angular/.angular/
-frontend-angular/src/environments/environment.ts
 
 frontend-angular/environments
 # fichiers temporaires et logs

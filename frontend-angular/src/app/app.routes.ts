@@ -1,9 +1,6 @@
 import { Routes } from '@angular/router';
-import { LoginComponent } from './login/login';
-import { RegisterComponent } from './register/register';
 import { authGuard } from './services/guards/auth-guard';
-import { MainPageComponent } from './main-page/main-page';
-import { authGuardFn } from '@auth0/auth0-angular';
+
 
 export const routes: Routes = [
   { path: 'login', loadComponent: () => import('./login/login').then(m => m.LoginComponent) },
@@ -17,7 +14,7 @@ export const routes: Routes = [
 
   {
     path: '',
-    canActivate: [authGuard], // 👈 TON guard, pas celui d’Auth0
+    canActivate: [authGuard], 
     loadComponent: () => import('./main-page/main-page').then(m => m.MainPageComponent)
   },
 

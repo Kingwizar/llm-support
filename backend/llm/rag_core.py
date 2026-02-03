@@ -1,4 +1,8 @@
+# ======================================================
 # llm/rag_core.py
+# Core RAG + LLM orchestration layer
+# ======================================================
+
 import os
 import json
 import re
@@ -9,95 +13,231 @@ import subprocess
 from typing import List, Dict, Any
 from sentence_transformers import SentenceTransformer
 from io import BytesIO
+
 from llm.prompt_builder import build_runtime_prompt
 from llm.web_search import simple_web_search
 from llm.ai_chat.voice_agent_prompt import build_voice_agent_prompt
 
-# ==================== CONSTANTS ====================
+
+# ======================================================
+# ----------------- CONSTANTS --------------------------
+# ======================================================
+
+# Base URL of the Ollama service (Docker service by default)
 OLLAMA_BASE = os.getenv("OLLAMA_BASE_URL", "http://npone_ollama:11434")
 
+# Ollama HTTP endpoints
 OLLAMA_URL = f"{OLLAMA_BASE}/api/generate"
 OLLAMA_CHAT_URL = f"{OLLAMA_BASE}/api/chat"
 
+# Directory storing FAISS index and metadata
 INDEX_DIR = "rag_index"
 os.makedirs(INDEX_DIR, exist_ok=True)
 
+# Text chunking parameters for RAG indexing
 CHUNK_SIZE = 600
 CHUNK_OVERLAP = 100
+
+# Default number of retrieved chunks
 TOP_K_DEFAULT = 4
+
+# Sentence-transformer model used for embeddings
 EMB_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
-OLLAMA_URL = "http://npone_ollama:11434/api/generate"
-# ==================== TEXT & CHUNKING ====================
 
-def chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> List[str]:
+# ======================================================
+# ----------------- TEXT CHUNKING ----------------------
+# ======================================================
+
+def chunk_text(
+    text: str,
+    size: int = CHUNK_SIZE,
+    overlap: int = CHUNK_OVERLAP
+) -> List[str]:
+    """
+    Split a long text into overlapping chunks.
+
+    - Normalizes whitespace
+    - Uses a sliding window with overlap
+    - Designed for semantic embedding (RAG)
+
+    Returns a list of text chunks.
+    """
     text = re.sub(r"\s+", " ", (text or "").strip())
     if not text:
         return []
-    chunks, i = [], 0
+
+    chunks = []
+    i = 0
     step = size - overlap
+
     while i < len(text):
         chunks.append(text[i:i + size])
         i += step
+
     return chunks
 
-# ==================== FAISS RAG CORE ====================
+
+# ======================================================
+# ----------------- FAISS CORE -------------------------
+# ======================================================
 
 def load_index():
+    """
+    Load the FAISS index and its associated metadata.
+
+    Returns:
+    - model: sentence-transformer embedding model
+    - index: FAISS index for vector search
+    - recs: metadata records aligned with embeddings
+    """
     embs = np.load(os.path.join(INDEX_DIR, "embeddings.npy"))
     index = faiss.read_index(os.path.join(INDEX_DIR, "faiss.index"))
-    recs = [json.loads(l) for l in open(os.path.join(INDEX_DIR, "records.jsonl"), "r")]
+    recs = [
+        json.loads(l)
+        for l in open(os.path.join(INDEX_DIR, "records.jsonl"), "r")
+    ]
+
     model = SentenceTransformer(EMB_MODEL_NAME)
     return model, index, recs
 
-def retrieve(question: str, top_k: int = TOP_K_DEFAULT) -> List[Dict[str, Any]]:
+
+def retrieve(
+    question: str,
+    top_k: int = TOP_K_DEFAULT
+) -> List[Dict[str, Any]]:
+    """
+    Retrieve the most relevant text chunks for a question
+    using vector similarity (cosine similarity).
+
+    Returns a list of:
+    - doc: document identifier
+    - text: retrieved chunk
+    - score: similarity score
+    """
     model, index, recs = load_index()
-    q_emb = model.encode([question], normalize_embeddings=True).astype("float32")
+
+    # Encode question into embedding space
+    q_emb = model.encode(
+        [question],
+        normalize_embeddings=True
+    ).astype("float32")
+
+    # FAISS nearest neighbor search
     D, I = index.search(q_emb, top_k)
+
     return [
-        {"doc": recs[idx]["doc"], "text": recs[idx]["text"], "score": float(score)}
+        {
+            "doc": recs[idx]["doc"],
+            "text": recs[idx]["text"],
+            "score": float(score)
+        }
         for idx, score in zip(I[0], D[0])
     ]
 
-# ==================== RAG PREP ====================
 
-def rag_prepare(question: str, top_k: int = TOP_K_DEFAULT) -> Dict[str, Any]:
+# ======================================================
+# ----------------- RAG PREPARATION --------------------
+# ======================================================
+
+def rag_prepare(
+    question: str,
+    top_k: int = TOP_K_DEFAULT
+) -> Dict[str, Any]:
+    """
+    Prepare a RAG package for the LLM.
+
+    Steps:
+    1. Retrieve top-k semantic chunks
+    2. Build a formatted sources block
+    3. Build the final LLM prompt
+
+    Returns a structured dict used downstream.
+    """
     hits = retrieve(question, top_k=top_k)
+
+    # Build textual context injected into the prompt
     sources_block = "\n".join(
         f"[S{i}] ({h['doc']}) {h['text'][:400]}"
         for i, h in enumerate(hits, 1)
     )
+
     return {
-        "prompt": build_runtime_prompt(question, hits, sources_block),
-        "citations": [{"doc": h["doc"], "score": h["score"]} for h in hits],
+        "prompt": build_runtime_prompt(
+            question,
+            hits,
+            sources_block
+        ),
+        "citations": [
+            {"doc": h["doc"], "score": h["score"]}
+            for h in hits
+        ],
         "sources_block": sources_block,
         "question": question,
     }
 
-# ==================== RAG + WEB ====================
 
-def answer_with_rag_or_web(question: str, top_k: int = TOP_K_DEFAULT) -> Dict[str, Any]:
-    web_results = simple_web_search(question, num_results=3, full_content=True)
+# ======================================================
+# ----------------- RAG + WEB STRATEGY -----------------
+# ======================================================
+
+def answer_with_rag_or_web(
+    question: str,
+    top_k: int = TOP_K_DEFAULT
+) -> Dict[str, Any]:
+    """
+    Main decision-making function for knowledge retrieval.
+
+    Strategy:
+    1. Always perform a web search (cheap, fallback-safe)
+    2. Try FAISS similarity to detect internal knowledge relevance
+    3. If similarity is low → web only
+    4. If similarity is high → RAG + web augmentation
+
+    This function DOES NOT call the LLM directly.
+    It only prepares the final prompt and sources.
+    """
+
+    # ---------- WEB SEARCH ----------
+    web_results = simple_web_search(
+        question,
+        num_results=3,
+        full_content=True
+    )
 
     web_block = "\n".join(
-        f"[WEB] {r.get('title','')}\nURL: {r.get('url','')}\n{r.get('content', r.get('snippet',''))[:2000]}"
-        for r in web_results if not r.get("error")
+        f"[WEB] {r.get('title','')}\n"
+        f"URL: {r.get('url','')}\n"
+        f"{r.get('content', r.get('snippet',''))[:2000]}"
+        for r in web_results
+        if not r.get("error")
     )
 
     web_citations = [
-        {"doc": r.get("url",""), "score": 0.3}
-        for r in web_results if not r.get("error")
+        {"doc": r.get("url", ""), "score": 0.3}
+        for r in web_results
+        if not r.get("error")
     ]
 
+    # ---------- FAISS SIMILARITY CHECK ----------
     try:
         model, index, _ = load_index()
-        q_emb = model.encode([question], normalize_embeddings=True).astype("float32")
+        q_emb = model.encode(
+            [question],
+            normalize_embeddings=True
+        ).astype("float32")
+
         D, _ = index.search(q_emb, top_k)
         max_sim = float(np.max(D))
+
     except Exception as e:
-        print(f"[WARN] FAISS indisponible : {e}")
+        # FAISS unavailable → web-only fallback
         return {
-            "prompt": build_runtime_prompt(question, web_citations, web_block),
+            "prompt": build_runtime_prompt(
+                question,
+                web_citations,
+                web_block
+            ),
             "citations": web_citations,
             "sources_block": web_block,
             "question": question,
@@ -106,11 +246,17 @@ def answer_with_rag_or_web(question: str, top_k: int = TOP_K_DEFAULT) -> Dict[st
             "similarity": None,
         }
 
+    # ---------- DECISION THRESHOLD ----------
     SIM_THRESHOLD = 0.35
 
     if max_sim < SIM_THRESHOLD:
-        print(f"[INFO] Similarité FAISS faible ({max_sim:.2f}) → Web only")
-        prompt = build_runtime_prompt(question, web_citations, web_block)
+        # Internal knowledge not relevant enough
+        prompt = build_runtime_prompt(
+            question,
+            web_citations,
+            web_block
+        )
+
         return {
             "prompt": prompt,
             "citations": web_citations,
@@ -121,11 +267,26 @@ def answer_with_rag_or_web(question: str, top_k: int = TOP_K_DEFAULT) -> Dict[st
             "similarity": max_sim,
         }
 
+    # ---------- RAG + WEB MERGE ----------
     pack = rag_prepare(question, top_k)
-    combined_sources = pack["sources_block"] + "\n\n# WEB SEARCH RESULTS\n" + web_block
-    combined_citations = pack["citations"] + web_citations
 
-    prompt = build_runtime_prompt(question, combined_citations, combined_sources)
+    combined_sources = (
+        pack["sources_block"]
+        + "\n\n# WEB SEARCH RESULTS\n"
+        + web_block
+    )
+
+    combined_citations = (
+        pack["citations"]
+        + web_citations
+    )
+
+    prompt = build_runtime_prompt(
+        question,
+        combined_citations,
+        combined_sources
+    )
+
     return {
         "prompt": prompt,
         "citations": combined_citations,
@@ -136,18 +297,31 @@ def answer_with_rag_or_web(question: str, top_k: int = TOP_K_DEFAULT) -> Dict[st
         "similarity": max_sim,
     }
 
-# ============================
-# OLLAMA HTTP (NO STREAM)
-# ============================
 
-def query_ollama(prompt: str, model_name: str = "qwen14b_llm") -> str:
+# ======================================================
+# ----------------- OLLAMA (TEXT) ----------------------
+# ======================================================
+
+def query_ollama(
+    prompt: str,
+    model_name: str = "qwen14b_llm"
+) -> str:
+    """
+    Send a fully-built prompt to Ollama (no streaming).
+
+    This is the ONLY place where:
+    - The LLM is actually called
+    - The prompt leaves the backend
+
+    All RAG logic must be completed BEFORE this call.
+    """
     payload = {
         "model": model_name,
         "prompt": prompt,
         "stream": False
     }
 
-    # ===== DEBUG PROMPT =====
+    # Debug visibility for prompt inspection
     print("\n================ PROMPT SENT TO OLLAMA ================")
     print(f"MODEL      : {model_name}")
     print(f"PROMPT LEN : {len(prompt)} chars")
@@ -156,15 +330,28 @@ def query_ollama(prompt: str, model_name: str = "qwen14b_llm") -> str:
     print("======================================================\n")
 
     try:
-        r = requests.post(OLLAMA_URL, json=payload, timeout=300)
+        r = requests.post(
+            OLLAMA_URL,
+            json=payload,
+            timeout=300
+        )
         r.raise_for_status()
         return r.json().get("response", "").strip()
     except Exception as e:
-        return f"[Erreur Ollama HTTP] {e}"
+        return f"[Ollama HTTP Error] {e}"
 
-# ==================== TEST ====================
+
+# ======================================================
+# ----------------- CLI / LOCAL TEST -------------------
+# ======================================================
 
 def test_rag_with_ollama(question: str):
+    """
+    Local debugging helper:
+    - Builds RAG/web prompt
+    - Sends it to Ollama
+    - Prints the response
+    """
     pack = answer_with_rag_or_web(question)
 
     print("\n=== QUESTION ===")
@@ -175,9 +362,12 @@ def test_rag_with_ollama(question: str):
     print("\n=== OLLAMA RESPONSE ===")
     print(answer)
 
-# ==================== LOCAL CLI (OPTIONNEL) ====================
 
 def query_ollama_local(prompt: str, model="qwen14b_llm"):
+    """
+    Alternative Ollama invocation via CLI (subprocess).
+    Useful for debugging without HTTP.
+    """
     process = subprocess.Popen(
         ["ollama", "run", model],
         stdin=subprocess.PIPE,
@@ -188,13 +378,23 @@ def query_ollama_local(prompt: str, model="qwen14b_llm"):
     out, _ = process.communicate(prompt)
     return out.strip()
 
-# ===========================
-# AGENT VOCAL 3D UNREAL
-# ===========================
 
-def query_ollama_voice_agent(user_text: str, model_name: str = "qwen14b_llm") -> str:
-    url = OLLAMA_CHAT_URL
+# ======================================================
+# ----------------- VOICE AGENT ------------------------
+# ======================================================
 
+def query_ollama_voice_agent(
+    user_text: str,
+    model_name: str = "qwen14b_llm"
+) -> str:
+    """
+    Specialized LLM call for voice/3D agents.
+
+    Differences from standard chat:
+    - Uses /api/chat
+    - Injects a system-level voice-agent prompt
+    - Optimized for short, spoken responses
+    """
     prompt = build_voice_agent_prompt(user_text)
 
     payload = {
@@ -206,8 +406,12 @@ def query_ollama_voice_agent(user_text: str, model_name: str = "qwen14b_llm") ->
     }
 
     try:
-        r = requests.post(url, json=payload, timeout=60)
+        r = requests.post(
+            OLLAMA_CHAT_URL,
+            json=payload,
+            timeout=60
+        )
         r.raise_for_status()
         return r.json().get("message", {}).get("content", "").strip()
     except Exception as e:
-        return f"[Erreur LLM Voice Agent] {e}"
+        return f"[LLM Voice Agent Error] {e}"
